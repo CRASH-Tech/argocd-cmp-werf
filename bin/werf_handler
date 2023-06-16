@@ -23,7 +23,7 @@ export WERF_FINAL_REPO=${REGISTRY}${BASH_REMATCH[1]}
 export DOCKER_CONFIG=/tmp/${ARGOCD_APP_NAME}
 
 ### Script handler
-if [ $1 == "init" ]; then
+if [ $1 == "init" ] && [ ${WERF_REPO_DISABLED} != "true" ] ; then
   rm -f /tmp/${ARGOCD_APP_NAME}/config.json
   werf cr login ${REGISTRY}
 elif [ $1 == "render" ]; then
