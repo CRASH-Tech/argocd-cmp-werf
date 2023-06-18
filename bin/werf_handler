@@ -27,5 +27,9 @@ if [[ $1 == "init" ]] && [[ ${WERF_REPO_DISABLED} != "true" ]] ; then
   rm -f /tmp/${ARGOCD_APP_NAME}/config.json
   werf cr login ${REGISTRY}
 elif [[ $1 == "render" ]]; then
-  werf render --set-docker-config-json-value
+  if [[ -z "${AVP_TYPE}" ]]; then
+    werf render --set-docker-config-json-value
+ else
+    werf render --set-docker-config-json-value | argocd-vault-plugin generate -
+  fi
 fi
