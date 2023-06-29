@@ -6,25 +6,31 @@ do
   export ${envVar#ARGOCD_ENV_}=${!envVar}
 done
 
-### Get env vars from kubernetes secret
-#data=`kubectl get secret cd-deploy-secret -o json | jq -r '.data | to_entries | map(.key + "=" + (.value | @base64d)) | .[]'`
-#vault kv get -format json xfix/infra/kubernetes/clusters/k-test | jq -r '.data.data | to_entries | map(.key + "=" + (.value | @sh)) | .[]'
+### Get vault token
+JWT=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
+VAULT_TOKEN=`curl -s -k --request POST \
+  --data '{"jwt": "'"${JWT}"'", "role": "'"${PROJECT}"'"}' \
+  ${VAULT_ADDR}/v1/auth/${VAULT_AUTH_METHOD}/login | jq -r '.auth.client_token'`
 
 ### Get deploy secrets
-data=`vault kv get -format json ${PROJECT}/infra/deploy/cd | jq -r '.data.data | to_entries | map(.key + "=" + (.value | @sh)) | .[]'`
+SECRETS=`curl -s -H "X-Vault-Request: true" -H "X-Vault-Token: ${VAULT_TOKEN}" \
+  ${VAULT_ADDR}/v1/${PROJECT}/data/infra/deploy/cd | jq -r '.data.data | to_entries | map(.key + "=" + .value) | .[]'`
 
 ### Set env vars from deploy secret
-for row in $(echo "${data}"); do
+for row in $(echo "${SECRETS}"); do
   export $row
 done
 
 ### Set env vars for werf
-REGEX='^https?:\/\/[a-zA-Z0-9.]+(.+)\.git$'
-[[ ${ARGOCD_APP_SOURCE_REPO_URL} =~ ${REGEX} ]]
-export WERF_REPO=${REGISTRY}/${PROJECT}/cache
-export WERF_FINAL_REPO=${REGISTRY}/${PROJECT}/${BASH_REMATCH[1]}
+REGEX='^(https?|ssh):\/\/([a-zA-Z0-9\.\@\:\-]+)\/(.+).git$'
 
-export DOCKER_CONFIG=/tmp/${ARGOCD_APP_NAME}
+if [[ $ARGOCD_APP_SOURCE_REPO_URL =~ $REGEX ]]; then
+  export WERF_REPO=${REGISTRY}/${PROJECT}/cache
+  export WERF_FINAL_REPO=${REGISTRY}/${PROJECT}/${BASH_REMATCH[3]}
+  export DOCKER_CONFIG=/tmp/${ARGOCD_APP_NAME}
+else
+  echo "Cannot parse git url!"; exit 1;
+fi
 
 ### Script handler
 if [[ $1 == "init" ]] && [[ ${WERF_REPO_DISABLED} != "true" ]] ; then
