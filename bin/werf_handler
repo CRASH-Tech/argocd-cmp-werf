@@ -7,9 +7,13 @@ do
 done
 
 ### Get env vars from kubernetes secret
-data=`kubectl get secret cd-deploy-secret -o json | jq -r '.data | to_entries | map(.key + "=" + (.value | @base64d)) | .[]'`
+#data=`kubectl get secret cd-deploy-secret -o json | jq -r '.data | to_entries | map(.key + "=" + (.value | @base64d)) | .[]'`
+#vault kv get -format json xfix/infra/kubernetes/clusters/k-test | jq -r '.data.data | to_entries | map(.key + "=" + (.value | @sh)) | .[]'
 
-### Set env vars from kubernetes secret
+### Get deploy secrets
+data=`vault kv get -format json ${PROJECT}/infra/deploy/cd | jq -r '.data.data | to_entries | map(.key + "=" + (.value | @sh)) | .[]'`
+
+### Set env vars from deploy secret
 for row in $(echo "${data}"); do
   export $row
 done
@@ -17,8 +21,8 @@ done
 ### Set env vars for werf
 REGEX='^https?:\/\/[a-zA-Z0-9.]+(.+)\.git$'
 [[ ${ARGOCD_APP_SOURCE_REPO_URL} =~ ${REGEX} ]]
-export WERF_REPO=${REGISTRY}/cache
-export WERF_FINAL_REPO=${REGISTRY}${BASH_REMATCH[1]}
+export WERF_REPO=${REGISTRY}/${PROJECT}/cache
+export WERF_FINAL_REPO=${REGISTRY}/${PROJECT}/${BASH_REMATCH[1]}
 
 export DOCKER_CONFIG=/tmp/${ARGOCD_APP_NAME}
 
