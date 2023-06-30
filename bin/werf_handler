@@ -37,9 +37,14 @@ if [[ $1 == "init" ]] && grep -q "image:" "werf.yaml"; then
   rm -f /tmp/${ARGOCD_APP_NAME}/config.json
   werf cr login ${REGISTRY}
 elif [[ $1 == "render" ]]; then
-  if [[ -z "${AVP_TYPE}" ]]; then
-    werf render --set-docker-config-json-value
- else
+  if [[ "${AVP_ENABLED}" == "true" ]]; then
+    export AVP_TYPE=vault
+    export AVP_AUTH_TYPE=k8s
+    export VAULT_ADDR=${VAULT_ADDR}
+    export AVP_K8S_MOUNT_PATH=auth/${VAULT_AUTH_METHOD}
+    export AVP_K8S_ROLE=${VAULT_AUTH_ROLE}
     werf render --set-docker-config-json-value | argocd-vault-plugin generate -
+ else
+    werf render --set-docker-config-json-value
   fi
 fi
