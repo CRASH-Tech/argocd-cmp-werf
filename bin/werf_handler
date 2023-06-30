@@ -9,7 +9,7 @@ done
 ### Get vault token
 JWT=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
 VAULT_TOKEN=`curl -s -k --request POST \
-  --data '{"jwt": "'"${JWT}"'", "role": "'"${PROJECT}"'"}' \
+  --data '{"jwt": "'"${JWT}"'", "role": "'"${VAULT_AUTH_ROLE}"'"}' \
   ${VAULT_ADDR}/v1/auth/${VAULT_AUTH_METHOD}/login | jq -r '.auth.client_token'`
 
 ### Get deploy secrets
