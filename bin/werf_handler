@@ -10,7 +10,7 @@ done
 JWT=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
 retVal=$?
 if [ $retVal -ne 0 ]; then
-    echo "Cannot read jwt token!"; exit 1;
+  >&2 echo "Cannot read jwt token!"; exit 1;
 fi
 
 VAULT_TOKEN=`curl -s -k --request POST \
@@ -18,7 +18,7 @@ VAULT_TOKEN=`curl -s -k --request POST \
   ${VAULT_ADDR}/v1/auth/${VAULT_AUTH_METHOD}/login | jq -e -r '.auth.client_token' 2>/dev/null`
 retVal=$?
 if [ $retVal -ne 0 ]; then
-    echo "Cannot get vault token!"; exit 1;
+  >&2 echo "Cannot get vault token!"; exit 1;
 fi
 
 ### Get deploy secrets
@@ -26,7 +26,7 @@ SECRETS=`curl -s -H "X-Vault-Request: true" -H "X-Vault-Token: ${VAULT_TOKEN}" \
   ${VAULT_ADDR}/v1/${VAULT_TENANT}/data/infra/deploy/${DEPLOY_SECRET}/cd | jq -e -r '.data.data | to_entries | map(.key + "=" + .value) | .[]' 2>/dev/null`
 retVal=$?
 if [ $retVal -ne 0 ]; then
-    echo "Cannot get vault secrets!"; exit 1;
+  >&2 echo "Cannot get vault secrets!"; exit 1;
 fi
 
 ### Set env vars from deploy secret
