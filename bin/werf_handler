@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -o pipefail
+
 ### Remove ARGO_ENV_ prefix
 for envVar in ${!ARGOCD_ENV_*}
 do
@@ -42,7 +44,7 @@ if [[ $ARGOCD_APP_SOURCE_REPO_URL =~ $REGEX ]]; then
   export WERF_FINAL_REPO=${REGISTRY}/${PROJECT}/${BASH_REMATCH[3]}
   export DOCKER_CONFIG=/tmp/${ARGOCD_APP_NAME}
 else
-  echo "Cannot parse git url!"; exit 1;
+  >&2 echo "Cannot parse git url!"; exit 1;
 fi
 
 ### Script handler
