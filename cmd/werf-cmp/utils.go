@@ -34,7 +34,7 @@ func createAppToken(app, duration string) (string, error) {
 }
 
 func getEnv() {
-	log.Info("Get env..")
+	log.Info("Get env...")
 	for _, e := range os.Environ() {
 		pair := strings.SplitN(e, "=", 2)
 		os.Setenv(strings.TrimPrefix(pair[0], "ARGOCD_ENV_"), pair[1])
@@ -62,7 +62,7 @@ func getEnv() {
 		}
 	}
 
-	log.Info("Get current namespace..")
+	log.Info("Get current namespace...")
 	ns, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err != nil {
 		log.Panic(err)

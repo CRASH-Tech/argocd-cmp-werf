@@ -35,78 +35,83 @@ func init() {
 }
 
 func main() {
-	vault, err := vault.New(VAULT_ADDR)
-	if err != nil {
-		log.Panic(err)
-	}
 
 	switch cmd := os.Args[1]; cmd {
 	case "init":
-		Init(vault)
+		Init()
 	case "render":
-		Render(vault)
+		Render()
 	default:
 		log.Panic("unknown command")
 	}
 
 }
 
-func Init(vault *vault.Vault) {
+func Init() {
 	log.Info(fmt.Sprintf("Init %s...", ARGOCD_APP_NAME))
 
 	if VAULT_ENABLED {
-		log.Info("Get admin SA token...")
-		saAdminToken, err := createAppToken(os.Getenv("VAULT_ADMIN_SA"), "1h")
-		if err != nil {
-			log.Panic(err)
-		}
-
-		log.Info("Get app SA token...")
-		saAppToken, err := createAppToken(os.Getenv("ARGOCD_APP_NAME"), "1h")
-		if err != nil {
-			log.Panic(err)
-		}
-
-		log.Info("Login to vault via admin SA token...")
-		adminToken, _, err := vault.Login(
-			saAdminToken,
-			VAULT_ADMIN_ROLE,
-			VAULT_AUTH_METHOD,
-		)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		log.Info("Create vault app auth role...")
-		err = createAppAuthRole(vault, adminToken)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		log.Info("Get vault app token...")
-		appToken, appEntityId, err := getAppAuthToken(vault, saAppToken)
-		if err != nil {
-			log.Panic(err)
-		}
-		VAULT_APP_TOKEN = appToken
-
-		log.Info("Create vault app entity...")
-		err = createAppAuthEntity(vault, adminToken, appEntityId)
-		if err != nil {
-			log.Panic(err)
-		}
-
-		log.Info("Create vault app policy...")
-		err = createAppPolicy(vault, adminToken)
-		if err != nil {
-			log.Panic(err)
-		}
-
+		vaultInit()
 	}
 }
 
-func Render(vault *vault.Vault) {
+func Render() {
 
+}
+
+func vaultInit() {
+	log.Info("Vault init...")
+	vault, err := vault.New(VAULT_ADDR)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	log.Info("Get admin SA token...")
+	saAdminToken, err := createAppToken(os.Getenv("VAULT_ADMIN_SA"), "1h")
+	if err != nil {
+		log.Panic(err)
+	}
+
+	log.Info("Get app SA token...")
+	saAppToken, err := createAppToken(os.Getenv("ARGOCD_APP_NAME"), "1h")
+	if err != nil {
+		log.Panic(err)
+	}
+
+	log.Info("Login to vault via admin SA token...")
+	adminToken, _, err := vault.Login(
+		saAdminToken,
+		VAULT_ADMIN_ROLE,
+		VAULT_AUTH_METHOD,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	log.Info("Create vault app auth role...")
+	err = createAppAuthRole(vault, adminToken)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	log.Info("Get vault app token...")
+	appToken, appEntityId, err := getAppAuthToken(vault, saAppToken)
+	if err != nil {
+		log.Panic(err)
+	}
+	VAULT_APP_TOKEN = appToken
+
+	log.Info("Create vault app entity...")
+	err = createAppAuthEntity(vault, adminToken, appEntityId)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	log.Info("Create vault app policy...")
+	err = createAppPolicy(vault, adminToken)
+	if err != nil {
+		log.Panic(err)
+	}
 }
 
 func createAppAuthRole(vault *vault.Vault, adminToken string) error {
