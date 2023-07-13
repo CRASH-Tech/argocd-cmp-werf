@@ -9,14 +9,14 @@ do
 done
 
 ### Get vault token
-JWT=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`
+JWT=`kubectl create token ${ARGOCD_APP_NAME} --duration 1h`
 retVal=$?
 if [ $retVal -ne 0 ]; then
-  >&2 echo "Cannot read jwt token!"; exit 1;
+  >&2 echo "Cannot create jwt token!"; exit 1;
 fi
 
-VAULT_TOKEN=`curl -s -k --request POST \
-  --data '{"jwt": "'"${JWT}"'", "role": "'"${VAULT_AUTH_DEPLOY_ROLE}"'"}' \
+export VAULT_TOKEN=`curl -s -k --request POST \
+  --data '{"jwt": "'"${JWT}"'", "role": "'"${VAULT_AUTH_ROLE}"'"}' \
   ${VAULT_ADDR}/v1/auth/${VAULT_AUTH_METHOD}/login | jq -e -r '.auth.client_token' 2>/dev/null`
 retVal=$?
 if [ $retVal -ne 0 ]; then
@@ -25,7 +25,7 @@ fi
 
 ### Get deploy secrets
 SECRETS=`curl -s -H "X-Vault-Request: true" -H "X-Vault-Token: ${VAULT_TOKEN}" \
-  ${VAULT_ADDR}/v1/${VAULT_TENANT}/data/infra/deploy/${DEPLOY_SECRET}/cd | jq -e -r '.data.data | to_entries | map(.key + "=" + .value) | .[]' 2>/dev/null`
+  ${VAULT_ADDR}/v1/${VAULT_TENANT}/data/${DEPLOY_SECRET} | jq -e -r '.data.data | to_entries | map(.key + "=" + .value) | .[]' 2>/dev/null`
 retVal=$?
 if [ $retVal -ne 0 ]; then
   >&2 echo "Cannot get vault secrets!"; exit 1;
@@ -54,10 +54,8 @@ if [[ $1 == "init" ]] && grep -q "image:" "werf.yaml"; then
 elif [[ $1 == "render" ]]; then
   if [[ "${AVP_ENABLED}" == "true" ]]; then
     export AVP_TYPE=vault
-    export AVP_AUTH_TYPE=k8s
+    export AVP_AUTH_TYPE=token
     export VAULT_ADDR=${VAULT_ADDR}
-    export AVP_K8S_MOUNT_PATH=auth/${VAULT_AUTH_METHOD}
-    export AVP_K8S_ROLE=${VAULT_AUTH_ROLE}
     werf render --set-docker-config-json-value | argocd-vault-plugin generate -
  else
     werf render --set-docker-config-json-value
