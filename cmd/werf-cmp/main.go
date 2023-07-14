@@ -7,13 +7,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// "fmt"
-// "os"
-// "strings"
-
-// "github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/vault"
-// log "github.com/sirupsen/logrus"
-
 var (
 	ARGOCD_APP_NAME            string
 	ARGOCD_NAMESPACE           string
@@ -63,6 +56,7 @@ func Init() {
 		if err != nil {
 			log.Panic(err)
 		}
+
 		fmt.Print(out)
 	}
 }
