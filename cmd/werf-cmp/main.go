@@ -74,9 +74,9 @@ func Render() {
 		os.Setenv("AVP_AUTH_TYPE", "token")
 		os.Setenv("VAULT_TOKEN", VAULT_APP_TOKEN)
 
-		cmd = "set -o pipefail; werf render --dev --set-docker-config-json-value | argocd-vault-plugin generate -"
+		cmd = "set -o pipefail; werf render --set-docker-config-json-value | argocd-vault-plugin generate -"
 	} else {
-		cmd = "werf render --dev --set-docker-config-json-value"
+		cmd = "werf render --set-docker-config-json-value"
 	}
 
 	out, err := Cmd(cmd)
