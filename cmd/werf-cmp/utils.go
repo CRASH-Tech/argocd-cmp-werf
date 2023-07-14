@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,7 +23,7 @@ func Cmd(command string) (string, error) {
 	return outb.String(), nil
 }
 
-func createAppToken(app, duration string) (string, error) {
+func createSaToken(app, duration string) (string, error) {
 	out, err := Cmd(fmt.Sprintf("kubectl create token %s --duration %s", app, duration))
 	if err != nil {
 		return "", err
@@ -44,8 +43,12 @@ func getEnv() {
 
 	VAULT_ADDR = os.Getenv("VAULT_ADDR")
 	VAULT_ADMIN_ROLE = os.Getenv("VAULT_ADMIN_ROLE")
+	VAULT_ADMIN_SA = os.Getenv("VAULT_ADMIN_SA")
 	VAULT_AUTH_METHOD = os.Getenv("VAULT_AUTH_METHOD")
+	VAULT_TENANT = os.Getenv("VAULT_TENANT")
+	VAULT_DEPLOY_SECRET = os.Getenv("VAULT_DEPLOY_SECRET")
 	ARGOCD_APP_NAME = os.Getenv("ARGOCD_APP_NAME")
+	ARGOCD_APP_SOURCE_REPO_URL = os.Getenv("ARGOCD_APP_SOURCE_REPO_URL")
 
 	PROJECT = os.Getenv("PROJECT")
 	ENV = os.Getenv("ENV")
@@ -61,9 +64,11 @@ func getEnv() {
 			VAULT_ALLOW_PATHS = append(VAULT_ALLOW_PATHS, pair[1])
 		}
 	}
+	VAULT_ALLOW_PATHS = append(VAULT_ALLOW_PATHS,
+		fmt.Sprintf("%s/data/%s", VAULT_TENANT, VAULT_DEPLOY_SECRET))
 
 	log.Info("Get current namespace...")
-	ns, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err != nil {
 		log.Panic(err)
 	}

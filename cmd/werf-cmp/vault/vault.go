@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/hashicorp/vault-client-go"
@@ -100,4 +101,28 @@ func (v *Vault) SetPolicy(token, policyName, policyData string) error {
 	}
 
 	return nil
+}
+
+func (v *Vault) GetSecrets(token, path string) (map[string]string, error) {
+	err := v.client.SetToken(token)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := v.client.Read(context.Background(), path)
+	if err != nil {
+		return nil, err
+	}
+
+	data, ok := resp.Data["data"].(map[string]interface{})
+	if !ok {
+		return nil, errors.New("Not map interface")
+	}
+
+	result := make(map[string]string)
+	for k, v := range data {
+		result[k] = v.(string)
+	}
+
+	return result, nil
 }

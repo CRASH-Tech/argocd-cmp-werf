@@ -1,24 +1,31 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/vault"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	ARGOCD_APP_NAME  string
-	ARGOCD_NAMESPACE string
+	ARGOCD_APP_NAME            string
+	ARGOCD_NAMESPACE           string
+	ARGOCD_APP_SOURCE_REPO_URL string
 
-	VAULT_ENABLED     bool
-	VAULT_ADDR        string
-	VAULT_ADMIN_ROLE  string
-	VAULT_AUTH_METHOD string
-	VAULT_POLICIES    []string
-	VAULT_ALLOW_PATHS []string
-	VAULT_APP_TOKEN   string
+	VAULT_ENABLED       bool
+	VAULT_ADDR          string
+	VAULT_ADMIN_ROLE    string
+	VAULT_ADMIN_SA      string
+	VAULT_AUTH_METHOD   string
+	VAULT_POLICIES      []string
+	VAULT_ALLOW_PATHS   []string
+	VAULT_TENANT        string
+	VAULT_APP_TOKEN     string
+	VAULT_DEPLOY_SECRET string
 
 	PROJECT  string
 	ENV      string
@@ -51,29 +58,97 @@ func Init() {
 	log.Info(fmt.Sprintf("Init %s...", ARGOCD_APP_NAME))
 
 	if VAULT_ENABLED {
-		vaultInit()
+		vault, err := vault.New(VAULT_ADDR)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		vaultSetup(vault)
+
+		deploySecrets, err := vault.GetSecrets(VAULT_APP_TOKEN, fmt.Sprintf("%s/data/%s", VAULT_TENANT, VAULT_DEPLOY_SECRET))
+		if err != nil {
+			log.Panic(err)
+		}
+		for k, v := range deploySecrets {
+			os.Setenv(k, v)
+		}
+
+		if isNeedRegistry() {
+			gitPath, err := parseGitUrl(ARGOCD_APP_SOURCE_REPO_URL)
+			if err != nil {
+				log.Panic(err)
+			}
+			os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/%s/cache", os.Getenv("REGISTRY"), PROJECT, gitPath))
+			os.Setenv("WERF_FINAL_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), PROJECT, gitPath))
+			os.Setenv("WERF_DOCKER_CONFIG", fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
+			os.Remove(fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
+
+			log.Info("Login into registry...")
+			out, err := Cmd("werf cr login ${REGISTRY}")
+			if err != nil {
+				log.Panic(err)
+			}
+			fmt.Println(out)
+		}
 	}
-}
-
-func Render() {
 
 }
 
-func vaultInit() {
-	log.Info("Vault init...")
-	vault, err := vault.New(VAULT_ADDR)
+func parseGitUrl(url string) (string, error) {
+	r, err := regexp.Compile(`^(https?|ssh):\/\/([a-zA-Z0-9\.\@\:\-]+)\/(.+).git$`)
 	if err != nil {
 		log.Panic(err)
 	}
 
+	data := r.FindStringSubmatch(ARGOCD_APP_SOURCE_REPO_URL)
+	if len(data) != 4 {
+		return "", errors.New("cannot parse git url")
+	}
+
+	return data[3], nil
+
+}
+
+func Render() {
+	if VAULT_ENABLED {
+		vault, err := vault.New(VAULT_ADDR)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
+		if err != nil {
+			log.Panic(err)
+		}
+
+		appToken, _, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME)
+		if err != nil {
+			log.Panic(err)
+		}
+		os.Setenv("AVP_TYPE", "vault")
+		os.Setenv("AVP_AUTH_TYPE", "token")
+		os.Setenv("VAULT_TOKEN", appToken)
+	}
+
+	out, err := Cmd("werf render --set-docker-config-json-value | argocd-vault-plugin generate -")
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Print(out)
+
+}
+
+func vaultSetup(vault *vault.Vault) {
+	log.Info("Vault setup...")
+
 	log.Info("Create admin SA token...")
-	saAdminToken, err := createAppToken(os.Getenv("VAULT_ADMIN_SA"), "1h")
+	saAdminToken, err := createSaToken(VAULT_ADMIN_SA, "1h")
 	if err != nil {
 		log.Panic(err)
 	}
 
 	log.Info("Create app SA token...")
-	saAppToken, err := createAppToken(os.Getenv("ARGOCD_APP_NAME"), "1h")
+	saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -134,7 +209,6 @@ func getVaultAuthToken(vault *vault.Vault, saToken, role string) (token, entityI
 }
 
 func createAppAuthEntity(vault *vault.Vault, adminToken, appEntityId string) error {
-
 	metadata := map[string]interface{}{
 		"project":  PROJECT,
 		"env":      ENV,
@@ -174,4 +248,16 @@ func createAppPolicy(vault *vault.Vault, adminToken string) error {
 	)
 
 	return err
+}
+
+func isNeedRegistry() bool {
+	log.Info("Check registry needed...")
+	b, err := os.ReadFile("werf.yaml")
+	if err != nil {
+		log.Panic(err)
+	}
+
+	s := string(b)
+
+	return strings.Contains(s, "image:")
 }
