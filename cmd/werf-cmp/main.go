@@ -110,6 +110,7 @@ func parseGitUrl(url string) (string, error) {
 }
 
 func Render() {
+	var cmd string
 	if VAULT_ENABLED {
 		vault, err := vault.New(VAULT_ADDR)
 		if err != nil {
@@ -128,9 +129,13 @@ func Render() {
 		os.Setenv("AVP_TYPE", "vault")
 		os.Setenv("AVP_AUTH_TYPE", "token")
 		os.Setenv("VAULT_TOKEN", appToken)
+
+		cmd = "werf render --set-docker-config-json-value | argocd-vault-plugin generate -"
+	} else {
+		cmd = "werf render --set-docker-config-json-value"
 	}
 
-	out, err := Cmd("werf render --set-docker-config-json-value | argocd-vault-plugin generate -")
+	out, err := Cmd(cmd)
 	if err != nil {
 		log.Panic(err)
 	}
