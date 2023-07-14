@@ -19,6 +19,7 @@ var (
 	VAULT_AUTH_METHOD   string
 	VAULT_POLICIES      []string
 	VAULT_ALLOW_PATHS   []string
+	VAULT_ENV_SECRETS   []string
 	VAULT_TENANT        string
 	VAULT_APP_TOKEN     string
 	VAULT_DEPLOY_SECRET string

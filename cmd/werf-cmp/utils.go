@@ -156,6 +156,9 @@ func setEnv(setVautRules bool) {
 			if strings.HasPrefix(pair[0], "VAULT_ALLOW_PATH_") {
 				VAULT_ALLOW_PATHS = append(VAULT_ALLOW_PATHS, pair[1])
 			}
+			if strings.HasPrefix(pair[0], "VAULT_ENV_SECRETS_") {
+				VAULT_ENV_SECRETS = append(VAULT_ENV_SECRETS, pair[1])
+			}
 		}
 		VAULT_ALLOW_PATHS = append(VAULT_ALLOW_PATHS,
 			fmt.Sprintf("%s/data/%s", VAULT_TENANT, VAULT_DEPLOY_SECRET))
@@ -178,16 +181,18 @@ func setEnv(setVautRules bool) {
 		}
 		VAULT_APP_TOKEN = appToken
 
-		//GET DEPLOY SECRETS
-		deploySecrets, err := vault.GetSecrets(VAULT_APP_TOKEN, fmt.Sprintf("%s/data/%s", VAULT_TENANT, VAULT_DEPLOY_SECRET))
-		if err != nil {
-			log.Panic(err)
-		}
-		for k, v := range deploySecrets {
-			os.Setenv(k, v)
+		//GET VAULT SECRETS
+		for _, path := range VAULT_ENV_SECRETS {
+			envSecrets, err := vault.GetSecrets(VAULT_APP_TOKEN, fmt.Sprintf("%s/data/%s", VAULT_TENANT, path))
+			if err != nil {
+				log.Panic(err)
+			}
+			for k, v := range envSecrets {
+				os.Setenv(k, v)
+			}
 		}
 
-		///SET REGOSTRY VARS
+		///SET REGISTRY VARS
 		if isNeedRegistry() {
 			gitPath, err := parseGitUrl(ARGOCD_APP_SOURCE_REPO_URL)
 			if err != nil {
