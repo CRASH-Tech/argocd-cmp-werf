@@ -12,17 +12,16 @@ var (
 	ARGOCD_NAMESPACE           string
 	ARGOCD_APP_SOURCE_REPO_URL string
 
-	VAULT_ENABLED       bool
-	VAULT_ADDR          string
-	VAULT_ADMIN_ROLE    string
-	VAULT_ADMIN_SA      string
-	VAULT_AUTH_METHOD   string
-	VAULT_POLICIES      []string
-	VAULT_ALLOW_PATHS   []string
-	VAULT_ENV_SECRETS   []string
-	VAULT_TENANT        string
-	VAULT_APP_TOKEN     string
-	VAULT_DEPLOY_SECRET string
+	VAULT_ENABLED     bool
+	VAULT_ADDR        string
+	VAULT_ADMIN_ROLE  string
+	VAULT_ADMIN_SA    string
+	VAULT_AUTH_METHOD string
+	VAULT_POLICIES    []string
+	VAULT_ALLOW_PATHS []string
+	VAULT_ENV_SECRETS []string
+	VAULT_TENANT      string
+	VAULT_APP_TOKEN   string
 
 	PROJECT  string
 	ENV      string

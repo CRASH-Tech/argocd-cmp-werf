@@ -61,11 +61,23 @@ func createVaultPolicy(vault *vault.Vault, adminToken, name string, paths []stri
 	var policy string
 
 	for _, path := range paths {
+		parts := strings.Split(path, ";")
+		if len(parts) != 2 {
+			return errors.New("cannot parse vault allow path")
+		}
+
+		actions := strings.Split(parts[0], ",")
+		for p := range actions {
+			actions[p] = strings.TrimSpace(actions[p])
+		}
+
 		policy = policy + fmt.Sprintf(`
 		path "%s" {
-		  capabilities = ["read", "list"]
+		  capabilities = ["%s"]
 		}
-		`, path)
+		`, parts[1],
+			strings.Join(actions, `", "`),
+		)
 	}
 
 	err := vault.SetPolicy(
@@ -117,7 +129,7 @@ func isNeedRegistry() bool {
 	return strings.Contains(s, "image:")
 }
 
-func setEnv(setVautRules bool) {
+func setEnv(init bool) {
 	//REMOVE ARGOCD_ENV_ PREFIX
 	for _, e := range os.Environ() {
 		pair := strings.SplitN(e, "=", 2)
@@ -147,7 +159,8 @@ func setEnv(setVautRules bool) {
 		VAULT_ADMIN_SA = os.Getenv("VAULT_ADMIN_SA")
 		VAULT_AUTH_METHOD = os.Getenv("VAULT_AUTH_METHOD")
 		VAULT_TENANT = os.Getenv("VAULT_TENANT")
-		VAULT_DEPLOY_SECRET = os.Getenv("VAULT_DEPLOY_SECRET")
+
+		VAULT_POLICIES = append(VAULT_POLICIES, ARGOCD_APP_NAME)
 		for _, e := range os.Environ() {
 			pair := strings.SplitN(e, "=", 2)
 			if strings.HasPrefix(pair[0], "VAULT_POLICY_") {
@@ -160,12 +173,15 @@ func setEnv(setVautRules bool) {
 				VAULT_ENV_SECRETS = append(VAULT_ENV_SECRETS, pair[1])
 			}
 		}
-		VAULT_ALLOW_PATHS = append(VAULT_ALLOW_PATHS,
-			fmt.Sprintf("%s/data/%s", VAULT_TENANT, VAULT_DEPLOY_SECRET))
 
 		vault, err := vault.New(VAULT_ADDR)
 		if err != nil {
 			log.Panic(err)
+		}
+
+		///SET VAULT RULES
+		if init {
+			setVautRules(vault)
 		}
 
 		//GET APP SA TOKEN
@@ -175,7 +191,7 @@ func setEnv(setVautRules bool) {
 		}
 
 		//GET VAULT APP TOKEN
-		appToken, appEntityId, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
+		appToken, _, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -202,50 +218,63 @@ func setEnv(setVautRules bool) {
 			os.Setenv("WERF_FINAL_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), PROJECT, gitPath))
 			os.Setenv("WERF_DOCKER_CONFIG", fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
 		}
+	}
+}
 
-		///SET VAULT RULES
-		if setVautRules {
-			log.Info("Set vault rules...")
+func setVautRules(vault *vault.Vault) {
+	log.Info("Set vault rules...")
 
-			log.Info("Create admin SA token...")
-			saAdminToken, err := createSaToken(VAULT_ADMIN_SA, "1h")
-			if err != nil {
-				log.Panic(err)
-			}
+	log.Info("Create admin SA token...")
+	saAdminToken, err := createSaToken(VAULT_ADMIN_SA, "1h")
+	if err != nil {
+		log.Panic(err)
+	}
 
-			log.Info("Get vault admin token...")
-			adminToken, _, err := getVaultAuthToken(vault, saAdminToken, VAULT_ADMIN_ROLE, VAULT_AUTH_METHOD)
-			if err != nil {
-				log.Panic(err)
-			}
+	log.Info("Get vault admin token...")
+	adminToken, _, err := getVaultAuthToken(vault, saAdminToken, VAULT_ADMIN_ROLE, VAULT_AUTH_METHOD)
+	if err != nil {
+		log.Panic(err)
+	}
 
-			log.Info("Create vault app auth role...")
-			err = createVaultAuthRole(vault, adminToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD,
-				[]string{ARGOCD_APP_NAME},
-				[]string{ARGOCD_NAMESPACE},
-				VAULT_POLICIES,
-			)
-			if err != nil {
-				log.Panic(err)
-			}
+	log.Info("Create vault app policy...")
+	err = createVaultPolicy(vault, adminToken, ARGOCD_APP_NAME, VAULT_ALLOW_PATHS)
+	if err != nil {
+		log.Panic(err)
+	}
 
-			log.Info("Create vault app policy...")
-			err = createVaultPolicy(vault, adminToken, ARGOCD_APP_NAME, VAULT_ALLOW_PATHS)
-			if err != nil {
-				log.Panic(err)
-			}
+	log.Info("Create vault app auth role...")
+	err = createVaultAuthRole(vault, adminToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD,
+		[]string{ARGOCD_APP_NAME},
+		[]string{ARGOCD_NAMESPACE},
+		VAULT_POLICIES,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
 
-			log.Info("Create vault app entity...")
-			metadata := map[string]interface{}{
-				"project":  PROJECT,
-				"env":      ENV,
-				"app":      APP,
-				"instance": INSTANCE,
-			}
-			err = createVaultAuthEntity(vault, adminToken, appEntityId, ARGOCD_APP_NAME, VAULT_POLICIES, metadata)
-			if err != nil {
-				log.Panic(err)
-			}
-		}
+	log.Info("Get app SA token...")
+	saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
+	if err != nil {
+		log.Panic(err)
+	}
+
+	log.Info("Get app vault token...")
+	appToken, appEntityId, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
+	if err != nil {
+		log.Panic(err)
+	}
+	VAULT_APP_TOKEN = appToken
+
+	log.Info("Create vault app entity...")
+	metadata := map[string]interface{}{
+		"project":  PROJECT,
+		"env":      ENV,
+		"app":      APP,
+		"instance": INSTANCE,
+	}
+
+	err = createVaultAuthEntity(vault, adminToken, appEntityId, ARGOCD_APP_NAME, VAULT_POLICIES, metadata)
+	if err != nil {
+		log.Panic(err)
 	}
 }
