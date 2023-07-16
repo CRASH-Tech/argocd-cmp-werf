@@ -12,6 +12,8 @@ var (
 	ARGOCD_NAMESPACE           string
 	ARGOCD_APP_SOURCE_REPO_URL string
 
+	WERF_CACHE_DISABLED bool
+
 	VAULT_ENABLED     bool
 	VAULT_ADDR        string
 	VAULT_ADMIN_ROLE  string

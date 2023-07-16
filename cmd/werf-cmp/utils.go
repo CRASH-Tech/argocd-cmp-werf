@@ -57,7 +57,7 @@ func getVaultAuthToken(vault *vault.Vault, saToken, role, mountPath string) (tok
 	return
 }
 
-func createVaultPolicy(vault *vault.Vault, adminToken, name string, paths []string) error {
+func createVaultPolicy(vault *vault.Vault, adminToken, name, tenant string, paths []string) error {
 	var policy string
 
 	for _, path := range paths {
@@ -72,10 +72,12 @@ func createVaultPolicy(vault *vault.Vault, adminToken, name string, paths []stri
 		}
 
 		policy = policy + fmt.Sprintf(`
-		path "%s" {
+		path "%s/data/%s" {
 		  capabilities = ["%s"]
 		}
-		`, parts[1],
+		`,
+			tenant,
+			parts[1],
 			strings.Join(actions, `", "`),
 		)
 	}
@@ -159,6 +161,7 @@ func setEnv(init bool) {
 		VAULT_ADMIN_SA = os.Getenv("VAULT_ADMIN_SA")
 		VAULT_AUTH_METHOD = os.Getenv("VAULT_AUTH_METHOD")
 		VAULT_TENANT = os.Getenv("VAULT_TENANT")
+		WERF_CACHE_DISABLED = (os.Getenv("WERF_CACHE_DISABLED") == "true")
 
 		VAULT_POLICIES = append(VAULT_POLICIES, ARGOCD_APP_NAME)
 		for _, e := range os.Environ() {
@@ -214,9 +217,14 @@ func setEnv(init bool) {
 			if err != nil {
 				log.Panic(err)
 			}
-			os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/cache", os.Getenv("REGISTRY"), PROJECT))
-			os.Setenv("WERF_FINAL_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), PROJECT, gitPath))
 			os.Setenv("DOCKER_CONFIG", fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
+
+			if WERF_CACHE_DISABLED {
+				os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), PROJECT, gitPath))
+			} else {
+				os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/cache", os.Getenv("REGISTRY"), PROJECT))
+				os.Setenv("WERF_FINAL_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), PROJECT, gitPath))
+			}
 		}
 	}
 }
@@ -237,7 +245,7 @@ func setVautRules(vault *vault.Vault) {
 	}
 
 	log.Info("Create vault app policy...")
-	err = createVaultPolicy(vault, adminToken, ARGOCD_APP_NAME, VAULT_ALLOW_PATHS)
+	err = createVaultPolicy(vault, adminToken, ARGOCD_APP_NAME, VAULT_TENANT, VAULT_ALLOW_PATHS)
 	if err != nil {
 		log.Panic(err)
 	}
