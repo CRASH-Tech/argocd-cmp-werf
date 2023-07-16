@@ -1,5 +1,4 @@
 demo/*
 .helm
-test.sh
 werf.yaml
 werf_handler
