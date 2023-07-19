@@ -3,6 +3,7 @@ package vault
 import (
 	"context"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/hashicorp/vault-client-go"
@@ -14,9 +15,14 @@ type Vault struct {
 }
 
 func New(vaultAddress string) (*Vault, error) {
+	tls := vault.TLSConfiguration{
+		InsecureSkipVerify: os.Getenv("VAULT_SKIP_VERIFY") == "true",
+	}
+
 	client, err := vault.New(
 		vault.WithAddress(vaultAddress),
 		vault.WithRequestTimeout(30*time.Second),
+		vault.WithTLS(tls),
 	)
 
 	vault := Vault{
