@@ -24,6 +24,7 @@ var (
 	VAULT_ENV_SECRETS []string
 	VAULT_TENANT      string
 	VAULT_APP_TOKEN   string
+	VAULT_TOKEN_TTL   int32
 
 	PROJECT  string
 	ENV      string

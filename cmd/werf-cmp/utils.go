@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/vault"
@@ -42,6 +43,7 @@ func createVaultAuthRole(vault *vault.Vault, adminToken, name, mount string, saN
 		saNames,
 		NSs,
 		policies,
+		VAULT_TOKEN_TTL,
 	)
 
 	return err
@@ -145,6 +147,15 @@ func setEnv(init bool) {
 	ENV = os.Getenv("ENV")
 	APP = os.Getenv("APP")
 	INSTANCE = os.Getenv("INSTANCE")
+	if ttl, isSet := os.LookupEnv("VAULT_TOKEN_TTL"); isSet {
+		ttl, err := strconv.Atoi(ttl)
+		if err != nil {
+			log.Panic("cannot parse VAULT_TOKEN_TTL")
+		}
+		VAULT_TOKEN_TTL = int32(ttl)
+	} else {
+		VAULT_TOKEN_TTL = 3600
+	}
 
 	//GET CURRENT NS
 	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")

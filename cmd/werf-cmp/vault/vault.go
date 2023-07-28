@@ -51,7 +51,7 @@ func (v *Vault) Login(saToken, role, mountPath string) (token, endityId string, 
 	return
 }
 
-func (v *Vault) CreateAuthRoleKubernetes(token, role, mountPath string, boundServiceAccountNames, boundServiceAccountNamespaces, policies []string) error {
+func (v *Vault) CreateAuthRoleKubernetes(token, role, mountPath string, boundServiceAccountNames, boundServiceAccountNamespaces, policies []string, ttl int32) error {
 	err := v.client.SetToken(token)
 	if err != nil {
 		return err
@@ -61,6 +61,8 @@ func (v *Vault) CreateAuthRoleKubernetes(token, role, mountPath string, boundSer
 		BoundServiceAccountNames:      boundServiceAccountNames,
 		BoundServiceAccountNamespaces: boundServiceAccountNamespaces,
 		Policies:                      policies,
+		TokenTtl:                      ttl,
+		TokenMaxTtl:                   ttl,
 	}
 
 	_, err = v.client.Auth.KubernetesWriteAuthRole(context.Background(), role, data, vault.WithMountPath(mountPath))
