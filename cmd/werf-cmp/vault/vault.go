@@ -3,11 +3,14 @@ package vault
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
+	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/types"
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
+	log "github.com/sirupsen/logrus"
 )
 
 type Vault struct {
@@ -124,7 +127,7 @@ func (v *Vault) GetSecrets(token, path string) (map[string]string, error) {
 
 	data, ok := resp.Data["data"].(map[string]interface{})
 	if !ok {
-		return nil, errors.New("Not map interface")
+		return nil, errors.New("not map interface")
 	}
 
 	result := make(map[string]string)
@@ -133,4 +136,42 @@ func (v *Vault) GetSecrets(token, path string) (map[string]string, error) {
 	}
 
 	return result, nil
+}
+
+func (v *Vault) EnableKubernetesEngine(vaultToken string, clusterConfig types.KubernetesClusterSecret) error {
+	err := v.client.SetToken(vaultToken)
+	if err != nil {
+		return err
+	}
+
+	data := schema.MountsEnableSecretsEngineRequest{
+		Type: "kubernetes",
+	}
+
+	resp, err := v.client.System.MountsEnableSecretsEngine(
+		context.Background(),
+		clusterConfig.Name,
+		data,
+	)
+
+	log.Info(resp, err)
+
+	conf := make(map[string]interface{})
+	conf["kubernetes_host"] = clusterConfig.Server
+	conf["kubernetes_ca_cert"] = clusterConfig.Config.TlsClientConfig.CaData
+	if clusterConfig.Config.BearerToken != "" {
+		conf["service_account_jwt"] = clusterConfig.Config.BearerToken
+	} else {
+		conf["service_account_jwt"] = clusterConfig.Config.TlsClientConfig.KeyData
+	}
+
+	resp, err = v.client.Write(
+		context.Background(),
+		fmt.Sprintf("/%s/config", clusterConfig.Name),
+		conf,
+	)
+
+	log.Info(resp, err)
+
+	return nil
 }
