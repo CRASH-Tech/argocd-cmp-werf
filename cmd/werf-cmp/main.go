@@ -42,30 +42,44 @@ func init() {
 func main() {
 	switch cmd := os.Args[1]; cmd {
 	case "init":
-		setEnv(true)
-		Init()
+		err := setEnv(true)
+		if err != nil {
+			log.Panic(err)
+		}
+		err = Init()
+		if err != nil {
+			log.Panic(err)
+		}
 	case "render":
-		setEnv(false)
-		Render()
+		err := setEnv(false)
+		if err != nil {
+			log.Panic(err)
+		}
+		err = Render()
+		if err != nil {
+			log.Panic(err)
+		}
 	default:
 		log.Panic("unknown command")
 	}
 }
 
-func Init() {
+func Init() error {
 	if isNeedRegistry() {
 		log.Info("Login into registry...")
 		os.Remove(fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
 		out, err := Cmd("werf cr login ${REGISTRY}")
 		if err != nil {
-			log.Panic(err)
+			return err
 		}
 
 		fmt.Print(out)
 	}
+
+	return nil
 }
 
-func Render() {
+func Render() error {
 	var cmd string
 	if VAULT_ENABLED {
 		os.Setenv("AVP_TYPE", "vault")
@@ -79,8 +93,10 @@ func Render() {
 
 	out, err := Cmd(cmd)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 
 	fmt.Print(out)
+
+	return err
 }

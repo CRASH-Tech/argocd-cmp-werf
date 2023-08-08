@@ -140,7 +140,7 @@ func isNeedRegistry() bool {
 	return strings.Contains(s, "image:")
 }
 
-func setEnv(init bool) {
+func setEnv(init bool) error {
 	//REMOVE ARGOCD_ENV_ PREFIX
 	for _, e := range os.Environ() {
 		pair := strings.SplitN(e, "=", 2)
@@ -157,7 +157,7 @@ func setEnv(init bool) {
 	if ttl, isSet := os.LookupEnv("VAULT_TOKEN_TTL"); isSet {
 		ttl, err := strconv.Atoi(ttl)
 		if err != nil {
-			log.Panic("cannot parse VAULT_TOKEN_TTL")
+			return errors.New("cannot parse VAULT_TOKEN_TTL")
 		}
 		VAULT_TOKEN_TTL = int32(ttl)
 	} else {
@@ -167,7 +167,7 @@ func setEnv(init bool) {
 	//GET CURRENT NS
 	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 	ARGOCD_NAMESPACE = strings.TrimSpace(string(ns))
 
@@ -198,7 +198,7 @@ func setEnv(init bool) {
 
 		vault, err := vault.New(VAULT_ADDR)
 		if err != nil {
-			log.Panic(err)
+			return err
 		}
 
 		///SET VAULT RULES
@@ -213,20 +213,23 @@ func setEnv(init bool) {
 
 			//CREATE KUBERETES ENGINES
 			if VAULT_CREATE_KUBERETES_ENGINES {
-				createVaultKuberentesEngines(vault, tokens)
+				err := createVaultKuberentesEngines(vault, tokens)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
 		//GET APP SA TOKEN
 		saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
 		if err != nil {
-			log.Panic(err)
+			return err
 		}
 
 		//GET VAULT APP TOKEN
 		appToken, _, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
 		if err != nil {
-			log.Panic(err)
+			return err
 		}
 		VAULT_APP_TOKEN = appToken
 
@@ -234,7 +237,7 @@ func setEnv(init bool) {
 		for _, path := range VAULT_ENV_SECRETS {
 			envSecrets, err := vault.GetSecrets(VAULT_APP_TOKEN, fmt.Sprintf("%s/data/%s", VAULT_TENANT, path))
 			if err != nil {
-				log.Panic(err)
+				return err
 			}
 			for k, v := range envSecrets {
 				os.Setenv(k, v)
@@ -245,7 +248,7 @@ func setEnv(init bool) {
 		if isNeedRegistry() {
 			gitPath, err := parseGitUrl(ARGOCD_APP_SOURCE_REPO_URL)
 			if err != nil {
-				log.Panic(err)
+				return err
 			}
 			os.Setenv("DOCKER_CONFIG", fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
 
@@ -257,6 +260,8 @@ func setEnv(init bool) {
 			}
 		}
 	}
+
+	return nil
 }
 
 func getTokens(vault *vault.Vault) (result types.VaultTokens, err error) {
@@ -373,16 +378,19 @@ func getClustersSecret() (result []types.KubernetesClusterSecret, err error) {
 	return
 }
 
-func createVaultKuberentesEngines(vault *vault.Vault, tokens types.VaultTokens) {
+func createVaultKuberentesEngines(vault *vault.Vault, tokens types.VaultTokens) (err error) {
 	log.Info("Create vault kuberentes engines...")
 	clusters, err := getClustersSecret()
 	if err != nil {
-		log.Panic(err)
+		return
 	}
+
 	for _, cluster := range clusters {
 		err = vault.EnableKubernetesEngine(tokens.VaultAdminToken, cluster)
 		if err != nil {
-			log.Panic(err)
+			return
 		}
 	}
+
+	return
 }

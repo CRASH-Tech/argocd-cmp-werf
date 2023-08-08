@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/types"
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
-	log "github.com/sirupsen/logrus"
 )
 
 type Vault struct {
@@ -148,13 +148,15 @@ func (v *Vault) EnableKubernetesEngine(vaultToken string, clusterConfig types.Ku
 		Type: "kubernetes",
 	}
 
-	resp, err := v.client.System.MountsEnableSecretsEngine(
+	_, err = v.client.System.MountsEnableSecretsEngine(
 		context.Background(),
 		clusterConfig.Name,
 		data,
 	)
 
-	log.Info(resp, err)
+	if err != nil && !strings.Contains(err.Error(), "400") {
+		return err
+	}
 
 	conf := make(map[string]interface{})
 	conf["kubernetes_host"] = clusterConfig.Server
@@ -165,13 +167,14 @@ func (v *Vault) EnableKubernetesEngine(vaultToken string, clusterConfig types.Ku
 		conf["service_account_jwt"] = clusterConfig.Config.TlsClientConfig.KeyData
 	}
 
-	resp, err = v.client.Write(
+	_, err = v.client.Write(
 		context.Background(),
 		fmt.Sprintf("/%s/config", clusterConfig.Name),
 		conf,
 	)
-
-	log.Info(resp, err)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
