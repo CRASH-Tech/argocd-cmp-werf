@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -160,12 +161,14 @@ func (v *Vault) EnableKubernetesEngine(vaultToken string, clusterConfig types.Ku
 
 	conf := make(map[string]interface{})
 	conf["kubernetes_host"] = clusterConfig.Server
-	conf["kubernetes_ca_cert"] = clusterConfig.Config.TlsClientConfig.CaData
-	if clusterConfig.Config.BearerToken != "" {
-		conf["service_account_jwt"] = clusterConfig.Config.BearerToken
-	} else {
-		conf["service_account_jwt"] = clusterConfig.Config.TlsClientConfig.KeyData
+
+	caData, err := base64.StdEncoding.DecodeString(clusterConfig.Config.TlsClientConfig.CaData)
+	if err != nil {
+		return err
 	}
+
+	conf["kubernetes_ca_cert"] = string(caData)
+	conf["service_account_jwt"] = clusterConfig.Config.BearerToken
 
 	_, err = v.client.Write(
 		context.Background(),
