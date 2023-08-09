@@ -1,13 +1,5 @@
 package types
 
-type VaultTokens struct {
-	SaAdminToken    string
-	SaAppToken      string
-	VaultAdminToken string
-	VaultAppToken   string
-	AppEntityId     string
-}
-
 type KubernetesClusterSecret struct {
 	Name   string
 	Server string

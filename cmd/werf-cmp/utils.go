@@ -181,6 +181,11 @@ func setEnv(init bool) error {
 		VAULT_TENANT = os.Getenv("VAULT_TENANT")
 		WERF_CACHE_DISABLED = (os.Getenv("WERF_CACHE_DISABLED") == "true")
 		VAULT_CREATE_KUBERETES_ENGINES = (os.Getenv("VAULT_CREATE_KUBERETES_ENGINES") == "true")
+		if appSa, isSet := os.LookupEnv("VAULT_APP_SA"); isSet {
+			VAULT_APP_SA = appSa
+		} else {
+			VAULT_APP_SA = ARGOCD_APP_NAME
+		}
 
 		VAULT_POLICIES = append(VAULT_POLICIES, ARGOCD_APP_NAME)
 		for _, e := range os.Environ() {
@@ -203,35 +208,59 @@ func setEnv(init bool) error {
 
 		///SET VAULT RULES
 		if init {
-			tokens, err := getTokens(vault)
-			if err != nil {
-				log.Panic(err)
-			}
-			VAULT_APP_TOKEN = tokens.VaultAppToken
+			// tokens, err := getTokens(vault, false)
+			// if err != nil {
+			// 	return err
+			// }
 
-			setVaultRules(vault, tokens)
+			log.Info("Create admin SA token...")
+			saAdminToken, err := createSaToken(VAULT_ADMIN_SA, "1h")
+			if err != nil {
+				return err
+			}
+
+			log.Info("Get vault admin token...")
+			vaultAdminToken, _, err := getVaultAuthToken(vault, saAdminToken, VAULT_ADMIN_ROLE, VAULT_AUTH_METHOD)
+			if err != nil {
+				return err
+			}
+
+			// log.Info("Get vault app token...")
+			// vaultAppToken, vaultAppEntityId, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
+			// if err != nil {
+			// 	return err
+			// }
+			// VAULT_APP_TOKEN = vaultAppToken
+
+			setVaultRules(vault, vaultAdminToken)
 
 			//CREATE KUBERETES ENGINES
 			if VAULT_CREATE_KUBERETES_ENGINES {
-				err := createVaultKuberentesEngines(vault, tokens)
+				err := createVaultKuberentesEngines(vault, vaultAdminToken)
 				if err != nil {
 					return err
 				}
 			}
 		}
 
+		// tokens, err := getTokens(vault, true)
+		// if err != nil {
+		// 	return err
+		// }
+		// VAULT_APP_TOKEN = tokens.VaultAppToken
+
 		//GET APP SA TOKEN
-		saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
+		saAppToken, err := createSaToken(VAULT_APP_SA, "1h")
 		if err != nil {
 			return err
 		}
 
 		//GET VAULT APP TOKEN
-		appToken, _, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
+		vaultAppToken, _, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
 		if err != nil {
 			return err
 		}
-		VAULT_APP_TOKEN = appToken
+		VAULT_APP_TOKEN = vaultAppToken
 
 		//GET VAULT SECRETS
 		for _, path := range VAULT_ENV_SECRETS {
@@ -264,56 +293,69 @@ func setEnv(init bool) error {
 	return nil
 }
 
-func getTokens(vault *vault.Vault) (result types.VaultTokens, err error) {
-	log.Info("Create admin SA token...")
-	saAdminToken, err := createSaToken(VAULT_ADMIN_SA, "1h")
-	if err != nil {
-		return
-	}
-	result.SaAdminToken = saAdminToken
+// func getTokens(vault *vault.Vault, withAppToken bool) (result types.VaultTokens, err error) {
+// 	log.Info("Create admin SA token...")
+// 	saAdminToken, err := createSaToken(VAULT_ADMIN_SA, "1h")
+// 	if err != nil {
+// 		return
+// 	}
+// 	result.SaAdminToken = saAdminToken
 
-	log.Info("Get vault admin token...")
-	vaultAdminToken, _, err := getVaultAuthToken(vault, saAdminToken, VAULT_ADMIN_ROLE, VAULT_AUTH_METHOD)
-	if err != nil {
-		return
-	}
-	result.VaultAdminToken = vaultAdminToken
+// 	log.Info("Get vault admin token...")
+// 	vaultAdminToken, _, err := getVaultAuthToken(vault, saAdminToken, VAULT_ADMIN_ROLE, VAULT_AUTH_METHOD)
+// 	if err != nil {
+// 		return
+// 	}
+// 	result.VaultAdminToken = vaultAdminToken
 
-	log.Info("Get app SA token...")
-	saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
-	if err != nil {
-		return
-	}
-	result.SaAppToken = saAppToken
+// 	log.Info("Get app SA token...")
+// 	saAppToken, err := createSaToken(VAULT_APP_SA, "1h")
+// 	if err != nil {
+// 		return
+// 	}
+// 	result.SaAppToken = saAppToken
 
-	log.Info("Get app vault token...")
-	vaultAppToken, vaultAppEntityId, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
-	if err != nil {
-		return
-	}
-	result.VaultAppToken = vaultAppToken
-	result.AppEntityId = vaultAppEntityId
+// 	if withAppToken {
+// 		log.Info("Get app vault token...")
+// 		vaultAppToken, vaultAppEntityId, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
+// 		if err != nil {
+// 			return result, err
+// 		}
+// 		result.VaultAppToken = vaultAppToken
+// 		result.AppEntityId = vaultAppEntityId
+// 	}
 
-	return
-}
+// 	return
+// }
 
-func setVaultRules(vault *vault.Vault, tokens types.VaultTokens) {
+func setVaultRules(vault *vault.Vault, vaultAdminToken string) {
 	log.Info("Set vault rules...")
 
 	log.Info("Create vault app policy...")
-	err := createVaultPolicy(vault, tokens.VaultAdminToken, ARGOCD_APP_NAME, VAULT_TENANT, VAULT_ALLOW_PATHS)
+	err := createVaultPolicy(vault, vaultAdminToken, ARGOCD_APP_NAME, VAULT_TENANT, VAULT_ALLOW_PATHS)
 	if err != nil {
 		log.Panic(err)
 	}
 
 	log.Info("Create vault app auth role...")
-	err = createVaultAuthRole(vault, tokens.VaultAdminToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD,
-		[]string{ARGOCD_APP_NAME},
+	err = createVaultAuthRole(vault, vaultAdminToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD,
+		[]string{VAULT_APP_SA},
 		[]string{ARGOCD_NAMESPACE},
 		VAULT_POLICIES,
 	)
 	if err != nil {
 		log.Panic(err)
+	}
+
+	saAppToken, err := createSaToken(VAULT_APP_SA, "1h")
+	if err != nil {
+		return
+	}
+
+	log.Info("Get vault app token...")
+	_, vaultAppEntityId, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
+	if err != nil {
+		return
 	}
 
 	log.Info("Create vault app entity...")
@@ -324,7 +366,7 @@ func setVaultRules(vault *vault.Vault, tokens types.VaultTokens) {
 		"instance": INSTANCE,
 	}
 
-	err = createVaultAuthEntity(vault, tokens.VaultAdminToken, tokens.AppEntityId, ARGOCD_APP_NAME, VAULT_POLICIES, metadata)
+	err = createVaultAuthEntity(vault, vaultAdminToken, vaultAppEntityId, ARGOCD_APP_NAME, VAULT_POLICIES, metadata)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -378,7 +420,7 @@ func getClustersSecret() (result []types.KubernetesClusterSecret, err error) {
 	return
 }
 
-func createVaultKuberentesEngines(vault *vault.Vault, tokens types.VaultTokens) (err error) {
+func createVaultKuberentesEngines(vault *vault.Vault, vaultAdminToken string) (err error) {
 	log.Info("Create vault kuberentes engines...")
 	clusters, err := getClustersSecret()
 	if err != nil {
@@ -386,7 +428,7 @@ func createVaultKuberentesEngines(vault *vault.Vault, tokens types.VaultTokens) 
 	}
 
 	for _, cluster := range clusters {
-		err = vault.EnableKubernetesEngine(tokens.VaultAdminToken, cluster)
+		err = vault.EnableKubernetesEngine(vaultAdminToken, cluster)
 		if err != nil {
 			return
 		}

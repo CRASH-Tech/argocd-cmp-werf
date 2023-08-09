@@ -18,6 +18,7 @@ var (
 	VAULT_ADDR                     string
 	VAULT_ADMIN_ROLE               string
 	VAULT_ADMIN_SA                 string
+	VAULT_APP_SA                   string
 	VAULT_AUTH_METHOD              string
 	VAULT_POLICIES                 []string
 	VAULT_ALLOW_PATHS              []string
