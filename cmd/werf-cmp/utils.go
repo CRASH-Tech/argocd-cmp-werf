@@ -370,7 +370,7 @@ func getClustersSecret() (result []types.KubernetesClusterSecret, err error) {
 		}
 		cluster.Config = clusterConfig
 
-		if cluster.Name != "in-cluster" {
+		if cluster.Name != "in-cluster" && cluster.Config.BearerToken != "" {
 			result = append(result, cluster)
 		}
 	}
