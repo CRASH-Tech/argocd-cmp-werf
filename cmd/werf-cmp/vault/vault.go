@@ -2,10 +2,14 @@ package vault
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/types"
 	"github.com/hashicorp/vault-client-go"
 	"github.com/hashicorp/vault-client-go/schema"
 )
@@ -32,7 +36,7 @@ func New(vaultAddress string) (*Vault, error) {
 	return &vault, err
 }
 
-func (v *Vault) Login(saToken, role, mountPath string) (token, endityId string, err error) {
+func (v *Vault) Login(saToken, role, mountPath string) (token string, err error) {
 	resp, err := v.client.Auth.KubernetesLogin(
 		context.Background(),
 		schema.KubernetesLoginRequest{
@@ -42,58 +46,15 @@ func (v *Vault) Login(saToken, role, mountPath string) (token, endityId string, 
 		vault.WithMountPath(mountPath),
 	)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	token = resp.Auth.ClientToken
-	endityId = resp.Auth.EntityID
 
 	return
 }
 
-func (v *Vault) CreateAuthRoleKubernetes(token, role, mountPath string, boundServiceAccountNames, boundServiceAccountNamespaces, policies []string, ttl int32) error {
-	err := v.client.SetToken(token)
-	if err != nil {
-		return err
-	}
-
-	data := schema.KubernetesWriteAuthRoleRequest{
-		BoundServiceAccountNames:      boundServiceAccountNames,
-		BoundServiceAccountNamespaces: boundServiceAccountNamespaces,
-		Policies:                      policies,
-		TokenTtl:                      ttl,
-		TokenMaxTtl:                   ttl,
-	}
-
-	_, err = v.client.Auth.KubernetesWriteAuthRole(context.Background(), role, data, vault.WithMountPath(mountPath))
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (v *Vault) SetEntity(token, entityId, entityName string, policies []string, metadata map[string]interface{}) error {
-	err := v.client.SetToken(token)
-	if err != nil {
-		return err
-	}
-
-	data := schema.EntityUpdateByIdRequest{
-		Name:     entityName,
-		Policies: policies,
-		Metadata: metadata,
-	}
-
-	_, err = v.client.Identity.EntityUpdateById(context.Background(), entityId, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (v *Vault) SetPolicy(token, policyName, policyData string) error {
+func (v *Vault) SetPolicy(token, name, policyData string) error {
 	err := v.client.SetToken(token)
 	if err != nil {
 		return err
@@ -103,12 +64,34 @@ func (v *Vault) SetPolicy(token, policyName, policyData string) error {
 		Policy: policyData,
 	}
 
-	_, err = v.client.System.PoliciesWriteAclPolicy(context.Background(), policyName, data)
+	_, err = v.client.System.PoliciesWriteAclPolicy(context.Background(), name, data)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (v *Vault) CreateToken(token, name string, policies []string, ttl string, num_uses int32) (string, error) {
+	err := v.client.SetToken(token)
+	if err != nil {
+		return "", err
+	}
+
+	data := schema.TokenCreateRequest{
+		DisplayName: name,
+		NoParent:    true,
+		Policies:    policies,
+		Ttl:         ttl,
+		NumUses:     num_uses,
+	}
+
+	resp, err := v.client.Auth.TokenCreate(context.Background(), data, "")
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Auth.ClientToken, nil
 }
 
 func (v *Vault) GetSecrets(token, path string) (map[string]string, error) {
@@ -124,7 +107,7 @@ func (v *Vault) GetSecrets(token, path string) (map[string]string, error) {
 
 	data, ok := resp.Data["data"].(map[string]interface{})
 	if !ok {
-		return nil, errors.New("Not map interface")
+		return nil, errors.New("not map interface")
 	}
 
 	result := make(map[string]string)
@@ -133,4 +116,47 @@ func (v *Vault) GetSecrets(token, path string) (map[string]string, error) {
 	}
 
 	return result, nil
+}
+
+func (v *Vault) EnableKubernetesEngine(token string, clusterConfig types.KubernetesClusterSecret) error {
+	err := v.client.SetToken(token)
+	if err != nil {
+		return err
+	}
+
+	data := schema.MountsEnableSecretsEngineRequest{
+		Type: "kubernetes",
+	}
+
+	_, err = v.client.System.MountsEnableSecretsEngine(
+		context.Background(),
+		clusterConfig.Name,
+		data,
+	)
+
+	if err != nil && !strings.Contains(err.Error(), "400") {
+		return err
+	}
+
+	conf := make(map[string]interface{})
+	conf["kubernetes_host"] = clusterConfig.Server
+
+	caData, err := base64.StdEncoding.DecodeString(clusterConfig.Config.TlsClientConfig.CaData)
+	if err != nil {
+		return err
+	}
+
+	conf["kubernetes_ca_cert"] = string(caData)
+	conf["service_account_jwt"] = clusterConfig.Config.BearerToken
+
+	_, err = v.client.Write(
+		context.Background(),
+		fmt.Sprintf("/%s/config", clusterConfig.Name),
+		conf,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

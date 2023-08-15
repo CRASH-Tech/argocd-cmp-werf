@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,59 +12,126 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/types"
 	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/vault"
 	log "github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
-func Cmd(command string) (string, error) {
-	cmd := exec.Command("bash", "-c", command)
-	var outb, errb bytes.Buffer
-	cmd.Stdout = &outb
-	cmd.Stderr = &errb
-	err := cmd.Run()
-	if err != nil {
-		return outb.String(), errors.New(errb.String())
-	}
-	return outb.String(), nil
-}
-
-func createSaToken(app, duration string) (string, error) {
-	out, err := Cmd(fmt.Sprintf("kubectl create token %s --duration %s", app, duration))
-	if err != nil {
-		return "", err
+func GetEnv() (types.Env, error) {
+	//REMOVE ARGOCD_ENV_ PREFIX
+	for _, e := range os.Environ() {
+		pair := strings.SplitN(e, "=", 2)
+		os.Setenv(strings.TrimPrefix(pair[0], "ARGOCD_ENV_"), pair[1])
 	}
 
-	return out, err
+	result := types.Env{}
+
+	result.ARGOCD_APP_NAME = os.Getenv("ARGOCD_APP_NAME")
+	result.ARGOCD_NAMESPACE = os.Getenv("ARGOCD_NAMESPACE")
+	result.ARGOCD_APP_SOURCE_REPO_URL = os.Getenv("ARGOCD_APP_SOURCE_REPO_URL")
+
+	result.WERF_CACHE_DISABLED = (os.Getenv("WERF_CACHE_DISABLED") == "true")
+
+	result.VAULT_ENABLED = (os.Getenv("VAULT_ENABLED") == "true")
+	result.VAULT_ADDR = os.Getenv("VAULT_ADDR")
+	result.VAULT_AUTH_METHOD = os.Getenv("VAULT_AUTH_METHOD")
+	result.VAULT_AUTH_ROLE = os.Getenv("VAULT_AUTH_ROLE")
+	result.VAULT_TENANT = os.Getenv("VAULT_TENANT")
+	result.VAULT_CREATE_KUBERETES_ENGINES = (os.Getenv("VAULT_CREATE_KUBERETES_ENGINES") == "true")
+	result.VAULT_POLICIES = append(result.VAULT_POLICIES, os.Getenv("ARGOCD_APP_NAME"))
+	for _, e := range os.Environ() {
+		pair := strings.SplitN(e, "=", 2)
+		if strings.HasPrefix(pair[0], "VAULT_POLICY_") {
+			result.VAULT_POLICIES = append(result.VAULT_POLICIES, pair[1])
+		}
+		if strings.HasPrefix(pair[0], "VAULT_ALLOW_PATH_") {
+			result.VAULT_ALLOW_PATHS = append(result.VAULT_ALLOW_PATHS, pair[1])
+		}
+		if strings.HasPrefix(pair[0], "VAULT_ENV_SECRETS_") {
+			result.VAULT_ENV_SECRETS = append(result.VAULT_ENV_SECRETS, pair[1])
+		}
+	}
+
+	if ttl, isSet := os.LookupEnv("VAULT_TOKEN_TTL"); isSet {
+		result.VAULT_TOKEN_TTL = ttl
+	} else {
+		result.VAULT_TOKEN_TTL = "87600h"
+	}
+
+	if n, isSet := os.LookupEnv("VAULT_TOKEN_NUM_USES"); isSet {
+		n, err := strconv.Atoi(n)
+		if err != nil {
+			return result, errors.New("cannot parse VAULT_TOKEN_NUM_USES")
+		}
+		result.VAULT_TOKEN_NUM_USES = int32(n)
+	} else {
+		result.VAULT_TOKEN_NUM_USES = 0
+	}
+
+	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return result, err
+	}
+	result.ARGOCD_NAMESPACE = strings.TrimSpace(string(ns))
+
+	return result, nil
 }
 
-func createVaultAuthRole(vault *vault.Vault, adminToken, name, mount string, saNames, NSs, policies []string) error {
-	err := vault.CreateAuthRoleKubernetes(
-		adminToken,
-		name,
-		mount,
-		saNames,
-		NSs,
-		policies,
-		VAULT_TOKEN_TTL,
+func SetVaultEnv(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error {
+	for _, path := range env.VAULT_ENV_SECRETS {
+		envSecrets, err := vault.GetSecrets(vaultEnv.VAULT_TOKEN, fmt.Sprintf("%s/data/%s", env.VAULT_TENANT, path))
+		if err != nil {
+			return err
+		}
+		for k, v := range envSecrets {
+			os.Setenv(k, v)
+		}
+	}
+
+	return nil
+}
+
+func GetVaultEnv(vault *vault.Vault, env types.Env) (types.VaultEnv, error) {
+	result := types.VaultEnv{}
+
+	saToken, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+	if err != nil {
+		return result, err
+	}
+
+	vaultAdminToken, err := vault.Login(
+		strings.TrimSpace(string(saToken)),
+		env.VAULT_AUTH_ROLE,
+		env.VAULT_AUTH_METHOD,
 	)
+	if err != nil {
+		return result, err
+	}
+	result.VAULT_ADMIN_TOKEN = vaultAdminToken
 
-	return err
-}
-
-func getVaultAuthToken(vault *vault.Vault, saToken, role, mountPath string) (token, entityId string, err error) {
-	token, entityId, err = vault.Login(
-		saToken,
-		role,
-		mountPath,
+	vaultToken, err := vault.CreateToken(
+		vaultAdminToken,
+		env.ARGOCD_APP_NAME,
+		env.VAULT_POLICIES,
+		env.VAULT_TOKEN_TTL,
+		env.VAULT_TOKEN_NUM_USES,
 	)
+	if err != nil {
+		return result, err
+	}
+	result.VAULT_TOKEN = vaultToken
 
-	return
+	return result, nil
 }
 
-func createVaultPolicy(vault *vault.Vault, adminToken, name, tenant string, paths []string) error {
+func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error {
 	var policy string
 
-	for _, path := range paths {
+	for _, path := range env.VAULT_ALLOW_PATHS {
 		parts := strings.Split(path, ";")
 		if len(parts) != 2 {
 			return errors.New("cannot parse vault allow path")
@@ -78,34 +147,61 @@ func createVaultPolicy(vault *vault.Vault, adminToken, name, tenant string, path
 		  capabilities = ["%s"]
 		}
 		`,
-			tenant,
+			env.VAULT_TENANT,
 			parts[1],
 			strings.Join(actions, `", "`),
 		)
 	}
 
+	log.Info("Set vault policies...")
 	err := vault.SetPolicy(
-		adminToken,
-		name,
+		vaultEnv.VAULT_ADMIN_TOKEN,
+		env.ARGOCD_APP_NAME,
 		policy,
-	)
-
-	return err
-}
-
-func createVaultAuthEntity(vault *vault.Vault, adminToken, appEntityId, name string, policies []string, metadata map[string]interface{}) error {
-	err := vault.SetEntity(
-		adminToken,
-		appEntityId,
-		name,
-		policies,
-		metadata,
 	)
 	if err != nil {
 		return err
 	}
 
+	if env.VAULT_CREATE_KUBERETES_ENGINES {
+		log.Info("Create vault kuberentes engines...")
+		clusters, err := getClustersSecret(env)
+		if err != nil {
+			return err
+		}
+
+		for _, cluster := range clusters {
+			err = vault.EnableKubernetesEngine(vaultEnv.VAULT_ADMIN_TOKEN, cluster)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
+}
+
+func Cmd(command string) (string, error) {
+	cmd := exec.Command("bash", "-c", command)
+	var outb, errb bytes.Buffer
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
+	err := cmd.Run()
+	if err != nil {
+		return outb.String(), errors.New(errb.String())
+	}
+	return outb.String(), nil
+}
+
+func isNeedRegistry() bool {
+	b, err := os.ReadFile("werf.yaml")
+	if err != nil {
+		return false
+	}
+
+	s := string(b)
+
+	return strings.Contains(s, "image:")
 }
 
 func parseGitUrl(url string) (string, error) {
@@ -122,178 +218,50 @@ func parseGitUrl(url string) (string, error) {
 	return data[3], nil
 }
 
-func isNeedRegistry() bool {
-	b, err := os.ReadFile("werf.yaml")
-	if err != nil {
-		log.Panic(err)
-	}
+func getClustersSecret(env types.Env) (result []types.KubernetesClusterSecret, err error) {
+	var restConfig *rest.Config
 
-	s := string(b)
-
-	return strings.Contains(s, "image:")
-}
-
-func setEnv(init bool) {
-	//REMOVE ARGOCD_ENV_ PREFIX
-	for _, e := range os.Environ() {
-		pair := strings.SplitN(e, "=", 2)
-		os.Setenv(strings.TrimPrefix(pair[0], "ARGOCD_ENV_"), pair[1])
-	}
-
-	//SET VARS
-	ARGOCD_APP_NAME = os.Getenv("ARGOCD_APP_NAME")
-	ARGOCD_APP_SOURCE_REPO_URL = os.Getenv("ARGOCD_APP_SOURCE_REPO_URL")
-	PROJECT = os.Getenv("PROJECT")
-	ENV = os.Getenv("ENV")
-	APP = os.Getenv("APP")
-	INSTANCE = os.Getenv("INSTANCE")
-	if ttl, isSet := os.LookupEnv("VAULT_TOKEN_TTL"); isSet {
-		ttl, err := strconv.Atoi(ttl)
+	if path, isSet := os.LookupEnv("KUBECONFIG"); isSet {
+		log.Printf("Using configuration from '%s'", path)
+		restConfig, err = clientcmd.BuildConfigFromFlags("", path)
 		if err != nil {
-			log.Panic("cannot parse VAULT_TOKEN_TTL")
+			return
 		}
-		VAULT_TOKEN_TTL = int32(ttl)
 	} else {
-		VAULT_TOKEN_TTL = 3600
-	}
-
-	//GET CURRENT NS
-	ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-	if err != nil {
-		log.Panic(err)
-	}
-	ARGOCD_NAMESPACE = string(ns)
-
-	//SET VAULT VARS
-	if os.Getenv("VAULT_ENABLED") == "true" {
-		VAULT_ENABLED = true
-		VAULT_ADDR = os.Getenv("VAULT_ADDR")
-		VAULT_ADMIN_ROLE = os.Getenv("VAULT_ADMIN_ROLE")
-		VAULT_ADMIN_SA = os.Getenv("VAULT_ADMIN_SA")
-		VAULT_AUTH_METHOD = os.Getenv("VAULT_AUTH_METHOD")
-		VAULT_TENANT = os.Getenv("VAULT_TENANT")
-		WERF_CACHE_DISABLED = (os.Getenv("WERF_CACHE_DISABLED") == "true")
-
-		VAULT_POLICIES = append(VAULT_POLICIES, ARGOCD_APP_NAME)
-		for _, e := range os.Environ() {
-			pair := strings.SplitN(e, "=", 2)
-			if strings.HasPrefix(pair[0], "VAULT_POLICY_") {
-				VAULT_POLICIES = append(VAULT_POLICIES, pair[1])
-			}
-			if strings.HasPrefix(pair[0], "VAULT_ALLOW_PATH_") {
-				VAULT_ALLOW_PATHS = append(VAULT_ALLOW_PATHS, pair[1])
-			}
-			if strings.HasPrefix(pair[0], "VAULT_ENV_SECRETS_") {
-				VAULT_ENV_SECRETS = append(VAULT_ENV_SECRETS, pair[1])
-			}
-		}
-
-		vault, err := vault.New(VAULT_ADDR)
+		log.Printf("Using in-cluster configuration")
+		restConfig, err = rest.InClusterConfig()
 		if err != nil {
-			log.Panic(err)
+			return
 		}
+	}
 
-		///SET VAULT RULES
-		if init {
-			setVautRules(vault)
-		}
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return
+	}
 
-		//GET APP SA TOKEN
-		saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
+	opts := metav1.ListOptions{
+		LabelSelector: "argocd.argoproj.io/secret-type=cluster",
+	}
+
+	secrets, err := clientset.CoreV1().Secrets(env.ARGOCD_NAMESPACE).List(context.Background(), opts)
+
+	for _, secret := range secrets.Items {
+		cluster := types.KubernetesClusterSecret{}
+		cluster.Name = string(secret.Data["name"])
+		cluster.Server = string(secret.Data["server"])
+
+		clusterConfig := types.KubernetesClusterConfig{}
+		err = json.Unmarshal(secret.Data["config"], &clusterConfig)
 		if err != nil {
-			log.Panic(err)
+			return
 		}
+		cluster.Config = clusterConfig
 
-		//GET VAULT APP TOKEN
-		appToken, _, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
-		if err != nil {
-			log.Panic(err)
-		}
-		VAULT_APP_TOKEN = appToken
-
-		//GET VAULT SECRETS
-		for _, path := range VAULT_ENV_SECRETS {
-			envSecrets, err := vault.GetSecrets(VAULT_APP_TOKEN, fmt.Sprintf("%s/data/%s", VAULT_TENANT, path))
-			if err != nil {
-				log.Panic(err)
-			}
-			for k, v := range envSecrets {
-				os.Setenv(k, v)
-			}
-		}
-
-		///SET REGISTRY VARS
-		if isNeedRegistry() {
-			gitPath, err := parseGitUrl(ARGOCD_APP_SOURCE_REPO_URL)
-			if err != nil {
-				log.Panic(err)
-			}
-			os.Setenv("DOCKER_CONFIG", fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
-
-			if WERF_CACHE_DISABLED {
-				os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), PROJECT, gitPath))
-			} else {
-				os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/cache", os.Getenv("REGISTRY"), PROJECT))
-				os.Setenv("WERF_FINAL_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), PROJECT, gitPath))
-			}
+		if cluster.Name != "in-cluster" && cluster.Config.BearerToken != "" {
+			result = append(result, cluster)
 		}
 	}
-}
 
-func setVautRules(vault *vault.Vault) {
-	log.Info("Set vault rules...")
-
-	log.Info("Create admin SA token...")
-	saAdminToken, err := createSaToken(VAULT_ADMIN_SA, "1h")
-	if err != nil {
-		log.Panic(err)
-	}
-
-	log.Info("Get vault admin token...")
-	adminToken, _, err := getVaultAuthToken(vault, saAdminToken, VAULT_ADMIN_ROLE, VAULT_AUTH_METHOD)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	log.Info("Create vault app policy...")
-	err = createVaultPolicy(vault, adminToken, ARGOCD_APP_NAME, VAULT_TENANT, VAULT_ALLOW_PATHS)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	log.Info("Create vault app auth role...")
-	err = createVaultAuthRole(vault, adminToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD,
-		[]string{ARGOCD_APP_NAME},
-		[]string{ARGOCD_NAMESPACE},
-		VAULT_POLICIES,
-	)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	log.Info("Get app SA token...")
-	saAppToken, err := createSaToken(ARGOCD_APP_NAME, "1h")
-	if err != nil {
-		log.Panic(err)
-	}
-
-	log.Info("Get app vault token...")
-	appToken, appEntityId, err := getVaultAuthToken(vault, saAppToken, ARGOCD_APP_NAME, VAULT_AUTH_METHOD)
-	if err != nil {
-		log.Panic(err)
-	}
-	VAULT_APP_TOKEN = appToken
-
-	log.Info("Create vault app entity...")
-	metadata := map[string]interface{}{
-		"project":  PROJECT,
-		"env":      ENV,
-		"app":      APP,
-		"instance": INSTANCE,
-	}
-
-	err = createVaultAuthEntity(vault, adminToken, appEntityId, ARGOCD_APP_NAME, VAULT_POLICIES, metadata)
-	if err != nil {
-		log.Panic(err)
-	}
+	return
 }
