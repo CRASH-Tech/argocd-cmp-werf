@@ -4,34 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/types"
+	"github.com/CRASH-Tech/argocd-cmp-werf/cmd/werf-cmp/vault"
 	log "github.com/sirupsen/logrus"
-)
-
-var (
-	ARGOCD_APP_NAME            string
-	ARGOCD_NAMESPACE           string
-	ARGOCD_APP_SOURCE_REPO_URL string
-
-	WERF_CACHE_DISABLED bool
-
-	VAULT_ENABLED                  bool
-	VAULT_ADDR                     string
-	VAULT_ADMIN_ROLE               string
-	VAULT_ADMIN_SA                 string
-	VAULT_APP_SA                   string
-	VAULT_AUTH_METHOD              string
-	VAULT_POLICIES                 []string
-	VAULT_ALLOW_PATHS              []string
-	VAULT_ENV_SECRETS              []string
-	VAULT_TENANT                   string
-	VAULT_APP_TOKEN                string
-	VAULT_TOKEN_TTL                int32
-	VAULT_CREATE_KUBERETES_ENGINES bool
-
-	PROJECT  string
-	ENV      string
-	APP      string
-	INSTANCE string
 )
 
 func init() {
@@ -41,22 +16,34 @@ func init() {
 }
 
 func main() {
+	env, err := GetEnv()
+	if err != nil {
+		log.Panic(err)
+	}
+
+	var v *vault.Vault
+	var vEnv types.VaultEnv
+	if env.VAULT_ENABLED {
+		v, err = vault.New(env.VAULT_ADDR)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		vEnv, err = GetVaultEnv(v, env)
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+
 	switch cmd := os.Args[1]; cmd {
 	case "init":
-		err := setEnv(true)
+		err = Init(env, v, vEnv)
 		if err != nil {
 			log.Panic(err)
 		}
-		err = Init()
-		if err != nil {
-			log.Panic(err)
-		}
+
 	case "render":
-		err := setEnv(false)
-		if err != nil {
-			log.Panic(err)
-		}
-		err = Render()
+		err = Render(env, v, vEnv)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -65,31 +52,49 @@ func main() {
 	}
 }
 
-func Init() error {
-	if isNeedRegistry() {
-		log.Info("Login into registry...")
-		os.Remove(fmt.Sprintf("/tmp/%s", ARGOCD_APP_NAME))
-		out, err := Cmd("werf cr login ${REGISTRY}")
+func Init(env types.Env, vault *vault.Vault, vaultEnv types.VaultEnv) error {
+	if env.VAULT_ENABLED {
+		err := SetVault(vault, env, vaultEnv)
 		if err != nil {
 			return err
 		}
-
-		fmt.Print(out)
 	}
 
 	return nil
 }
 
-func Render() error {
+func Render(env types.Env, vault *vault.Vault, vaultEnv types.VaultEnv) error {
 	var cmd string
-	if VAULT_ENABLED {
+	if env.VAULT_ENABLED {
+		SetVaultEnv(vault, env, vaultEnv)
 		os.Setenv("AVP_TYPE", "vault")
 		os.Setenv("AVP_AUTH_TYPE", "token")
-		os.Setenv("VAULT_TOKEN", VAULT_APP_TOKEN)
+		os.Setenv("VAULT_TOKEN", vaultEnv.VAULT_TOKEN)
 
 		cmd = "set -o pipefail; werf render --set-docker-config-json-value | argocd-vault-plugin generate -"
 	} else {
 		cmd = "werf render --set-docker-config-json-value"
+	}
+
+	if isNeedRegistry() {
+		gitPath, err := parseGitUrl(env.ARGOCD_APP_SOURCE_REPO_URL)
+		if err != nil {
+			return err
+		}
+		os.Setenv("DOCKER_CONFIG", fmt.Sprintf("/tmp/%s", env.ARGOCD_APP_NAME))
+
+		if env.WERF_CACHE_DISABLED {
+			os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), os.Getenv("PROJECT"), gitPath))
+		} else {
+			os.Setenv("WERF_REPO", fmt.Sprintf("%s/%s/cache", os.Getenv("REGISTRY"), os.Getenv("PROJECT")))
+			os.Setenv("WERF_FINAL_REPO", fmt.Sprintf("%s/%s/%s", os.Getenv("REGISTRY"), os.Getenv("PROJECT"), gitPath))
+		}
+
+		os.Remove(fmt.Sprintf("/tmp/%s", env.ARGOCD_APP_NAME))
+		_, err = Cmd("werf cr login ${REGISTRY}")
+		if err != nil {
+			return err
+		}
 	}
 
 	out, err := Cmd(cmd)
@@ -99,5 +104,5 @@ func Render() error {
 
 	fmt.Print(out)
 
-	return err
+	return nil
 }
