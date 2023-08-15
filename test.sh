@@ -4,7 +4,7 @@ export VAULT_ENABLED='true'
 
 export VAULT_SKIP_VERIFY='true'
 
-export VAULT_ADDR='https://vault.localdomain'
+export VAULT_ADDR='https://vault.local'
 export VAULT_AUTH_METHOD=k-root
 export VAULT_AUTH_ROLE=xfix_argo-stack
 export VAULT_TENANT=xfix
@@ -24,7 +24,7 @@ export VAULT_ENV_SECRETS_0="infra/deploy/xfix/cd"
 
 export ARGOCD_APP_NAME=home-xfix-demo-app
 export ARGOCD_NAMESPACE=demo-app
-export ARGOCD_APP_SOURCE_REPO_URL="https://localhost.localdomain/sipve/proxy.git"
+export ARGOCD_APP_SOURCE_REPO_URL="https://localhost.local/sipve/proxy.git"
 
 export GIT_REF=master
 export PROJECT=xfix

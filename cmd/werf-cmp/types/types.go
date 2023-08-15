@@ -8,7 +8,7 @@ type Env struct {
 	WERF_CACHE_DISABLED bool
 
 	VAULT_ENABLED     bool
-	VAULT_ADDR        string // https://vault.xfix.org
+	VAULT_ADDR        string // https://vault.local
 	VAULT_AUTH_METHOD string // k-root
 	VAULT_AUTH_ROLE   string // xfix_argo-stack
 	VAULT_TENANT      string // xfix
