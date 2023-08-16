@@ -65,6 +65,8 @@ func Init(env types.Env, vault *vault.Vault, vaultEnv types.VaultEnv) error {
 
 func Render(env types.Env, vault *vault.Vault, vaultEnv types.VaultEnv) error {
 	var cmd string
+
+	os.Setenv("WERF_KUBE_VERSION", os.Getenv("KUBE_VERSION"))
 	if env.VAULT_ENABLED {
 		SetVaultEnv(vault, env, vaultEnv)
 		os.Setenv("AVP_TYPE", "vault")
