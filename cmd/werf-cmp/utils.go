@@ -184,7 +184,7 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 
 	if env.VAULT_CREATE_APP_ROLES && env.CLUSTER != "in-cluster" {
 		log.Info("Create vault app roles...")
-		roles, err := getVaultRoles("rbac/namespace")
+		roles, err := getVaultRoles("/home/argocd/rbac/namespace")
 		if err != nil {
 			return err
 		}
@@ -209,7 +209,7 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 
 	if env.VAULT_CREATE_CLUSTER_ROLES {
 		log.Info("Create vault cluster roles...")
-		roles, err := getVaultRoles("rbac/cluster")
+		roles, err := getVaultRoles("/home/argocd/rbac/cluster")
 		if err != nil {
 			return err
 		}
