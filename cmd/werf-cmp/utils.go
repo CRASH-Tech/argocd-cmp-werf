@@ -183,7 +183,6 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 	}
 
 	if env.VAULT_CREATE_APP_ROLES && env.CLUSTER != "in-cluster" {
-
 		log.Info("Create vault app roles...")
 		roles, err := getVaultRoles("rbac/namespace")
 		if err != nil {
@@ -203,6 +202,38 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 			)
 			if err != nil {
 				return err
+			}
+		}
+
+	}
+
+	if env.VAULT_CREATE_CLUSTER_ROLES {
+		log.Info("Create vault cluster roles...")
+		roles, err := getVaultRoles("rbac/cluster")
+		if err != nil {
+			return err
+		}
+
+		clusters, err := getClustersSecret(env)
+		if err != nil {
+			return err
+		}
+
+		for _, cluster := range clusters {
+			for role, rule := range roles {
+				err = vault.CreateKuberentesRole(
+					vaultEnv.VAULT_ADMIN_TOKEN,
+					cluster.Name,
+					fmt.Sprintf("cluster-%s", role),
+					"ClusterRole",
+					"24h",
+					"168h",
+					[]string{"kube-system"},
+					rule,
+				)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
