@@ -1,0 +1,46 @@
+rules:
+  - verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+    apiGroups:
+      - '*'
+    resources:
+      - endpoints
+      - persistentvolumeclaims
+      - replicationcontrollers
+      - resourcequotas
+      - services
+      - events
+      - ingresses
+      - networkpolicies
+      - poddisruptionbudgets
+  - verbs:
+      - list
+      - watch
+      - delete
+    apiGroups:
+      - '*'
+    resources:
+      - secrets
+      - configmaps
+      - pods
+      - podtemplates
+      - jobs
+      - statefulsets
+      - daemonsets
+      - deployments
+      - replicasets
+  - verbs:
+      - get
+      - list
+      - watch
+      - update
+    apiGroups:
+      - apps
+    resources:
+      - statefulsets/scale
+      - daemonsets/scale

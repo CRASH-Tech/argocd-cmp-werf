@@ -1,7 +1,9 @@
 package types
 
 type Env struct {
+	CLUSTER                    string
 	ARGOCD_APP_NAME            string
+	ARGOCD_APP_NAMESPACE       string
 	ARGOCD_NAMESPACE           string
 	ARGOCD_APP_SOURCE_REPO_URL string
 
@@ -20,6 +22,8 @@ type Env struct {
 	VAULT_TOKEN_TTL                string // (OPTIONAL) 1h
 	VAULT_TOKEN_NUM_USES           int32  // (OPTIONAL) 0
 	VAULT_CREATE_KUBERETES_ENGINES bool
+	VAULT_CREATE_APP_ROLES         bool
+	VAULT_CREATE_CLUSTER_ROLES     bool
 }
 
 type VaultEnv struct {

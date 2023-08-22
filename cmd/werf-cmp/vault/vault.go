@@ -160,3 +160,28 @@ func (v *Vault) EnableKubernetesEngine(token string, clusterConfig types.Kuberne
 
 	return nil
 }
+
+func (v *Vault) CreateKuberentesRole(token, cluster, name, roleType, defaultTtl, maxTtl string, namespaces []string, rules string) error {
+	err := v.client.SetToken(token)
+	if err != nil {
+		return err
+	}
+
+	conf := make(map[string]interface{})
+	conf["allowed_kubernetes_namespaces"] = namespaces
+	conf["token_max_ttl"] = maxTtl
+	conf["token_default_ttl"] = defaultTtl
+	conf["kubernetes_role_type"] = roleType
+	conf["generated_role_rules"] = rules
+
+	_, err = v.client.Write(
+		context.Background(),
+		fmt.Sprintf("/%s/roles/%s", cluster, name),
+		conf,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

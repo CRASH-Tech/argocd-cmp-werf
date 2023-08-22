@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"regexp"
@@ -30,8 +31,9 @@ func GetEnv() (types.Env, error) {
 
 	result := types.Env{}
 
+	result.CLUSTER = os.Getenv("CLUSTER")
 	result.ARGOCD_APP_NAME = os.Getenv("ARGOCD_APP_NAME")
-	result.ARGOCD_NAMESPACE = os.Getenv("ARGOCD_NAMESPACE")
+	result.ARGOCD_APP_NAMESPACE = os.Getenv("ARGOCD_APP_NAMESPACE")
 	result.ARGOCD_APP_SOURCE_REPO_URL = os.Getenv("ARGOCD_APP_SOURCE_REPO_URL")
 
 	result.WERF_CACHE_DISABLED = (os.Getenv("WERF_CACHE_DISABLED") == "true")
@@ -42,6 +44,8 @@ func GetEnv() (types.Env, error) {
 	result.VAULT_AUTH_ROLE = os.Getenv("VAULT_AUTH_ROLE")
 	result.VAULT_TENANT = os.Getenv("VAULT_TENANT")
 	result.VAULT_CREATE_KUBERETES_ENGINES = (os.Getenv("VAULT_CREATE_KUBERETES_ENGINES") == "true")
+	result.VAULT_CREATE_APP_ROLES = (os.Getenv("VAULT_CREATE_APP_ROLES") == "true")
+	result.VAULT_CREATE_CLUSTER_ROLES = (os.Getenv("VAULT_CREATE_CLUSTER_ROLES") == "true")
 	result.VAULT_POLICIES = append(result.VAULT_POLICIES, os.Getenv("ARGOCD_APP_NAME"))
 	for _, e := range os.Environ() {
 		pair := strings.SplitN(e, "=", 2)
@@ -178,6 +182,32 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 		}
 	}
 
+	if env.VAULT_CREATE_APP_ROLES && env.CLUSTER != "in-cluster" {
+
+		log.Info("Create vault app roles...")
+		roles, err := getVaultRoles("rbac/namespace")
+		if err != nil {
+			return err
+		}
+
+		for role, rule := range roles {
+			err = vault.CreateKuberentesRole(
+				vaultEnv.VAULT_ADMIN_TOKEN,
+				env.CLUSTER,
+				fmt.Sprintf("%s-%s", env.ARGOCD_APP_NAME, role),
+				"Role",
+				"24h",
+				"168h",
+				[]string{env.ARGOCD_APP_NAMESPACE},
+				rule,
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
@@ -261,6 +291,29 @@ func getClustersSecret(env types.Env) (result []types.KubernetesClusterSecret, e
 		if cluster.Name != "in-cluster" && cluster.Config.BearerToken != "" {
 			result = append(result, cluster)
 		}
+	}
+
+	return
+}
+
+func getVaultRoles(path string) (result map[string]string, err error) {
+	result = make(map[string]string)
+
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return
+	}
+
+	for _, file := range files {
+		if !file.IsDir() {
+			data, err := os.ReadFile(fmt.Sprintf("%s/%s", path, file.Name()))
+			if err != nil {
+				return result, err
+			}
+
+			result[strings.Split(file.Name(), ".")[0]] = string(data)
+		}
+
 	}
 
 	return

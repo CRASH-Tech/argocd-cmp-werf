@@ -1,0 +1,30 @@
+rules:
+  - verbs:
+      - get
+      - list
+      - watch
+    apiGroups:
+      - '*'
+    resources:
+      - componentstatuses
+      - namespaces
+      - nodes
+      - persistentvolumes
+      - mutatingwebhookconfigurations
+      - validatingwebhookconfigurations
+      - customresourcedefinitions
+      - apiservices
+      - tokenreviews
+      - selfsubjectaccessreviews
+      - selfsubjectrulesreviews
+      - subjectaccessreviews
+      - certificatesigningrequests
+      - runtimeclasses
+      - podsecuritypolicies
+      - clusterrolebindings
+      - clusterroles
+      - priorityclasses
+      - csidrivers
+      - csinodes
+      - storageclasses
+      - volumeattachment
