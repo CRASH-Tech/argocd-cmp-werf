@@ -244,7 +244,7 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 		}
 	}
 
-	if env.VAULT_OIDC_CREATE_USER_ROLES {
+	if env.VAULT_OIDC_CREATE_USER_ROLES && len(env.VAULT_OIDC_ALLOW_GROUPS) > 0 {
 		policy := fmt.Sprintf(`
 		path "%s/data/%s/%s/*" {
 			capabilities = ["read", "list", "create", "update", "patch", "delete"]
