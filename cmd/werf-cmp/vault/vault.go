@@ -185,3 +185,37 @@ func (v *Vault) CreateKuberentesRole(token, cluster, name, roleType, defaultTtl,
 
 	return nil
 }
+
+func (v *Vault) CreateOidcRole(token, name, method string, policies, boundGroups []string) error {
+	err := v.client.SetToken(token)
+	if err != nil {
+		return err
+	}
+
+	allowed_redirect_uris := []string{
+		fmt.Sprintf("%s/ui/vault/auth/oidc/oidc/callback", v.client.Configuration().Address),
+		fmt.Sprintf("%s/oidc/callback", v.client.Configuration().Address),
+	}
+
+	boundClaims := make(map[string][]string)
+	boundClaims["groups"] = boundGroups
+
+	conf := make(map[string]interface{})
+	conf["allowed_redirect_uris"] = allowed_redirect_uris
+	conf["oidc_scopes"] = []string{"openid", "profile", "email"}
+	conf["user_claim"] = "preferred_username"
+	conf["groups_claim"] = "groups"
+	conf["token_policies"] = policies
+	conf["bound_claims"] = boundClaims
+
+	_, err = v.client.Write(
+		context.Background(),
+		fmt.Sprintf("/auth/%s/role/%s", method, name),
+		conf,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

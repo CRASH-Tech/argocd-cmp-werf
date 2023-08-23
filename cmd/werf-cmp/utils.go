@@ -31,6 +31,8 @@ func GetEnv() (types.Env, error) {
 
 	result := types.Env{}
 
+	result.ENV = os.Getenv("ENV")
+	result.APP = os.Getenv("APP")
 	result.CLUSTER = os.Getenv("CLUSTER")
 	result.ARGOCD_APP_NAME = os.Getenv("ARGOCD_APP_NAME")
 	result.ARGOCD_APP_NAMESPACE = os.Getenv("ARGOCD_APP_NAMESPACE")
@@ -46,6 +48,10 @@ func GetEnv() (types.Env, error) {
 	result.VAULT_CREATE_KUBERETES_ENGINES = (os.Getenv("VAULT_CREATE_KUBERETES_ENGINES") == "true")
 	result.VAULT_CREATE_APP_ROLES = (os.Getenv("VAULT_CREATE_APP_ROLES") == "true")
 	result.VAULT_CREATE_CLUSTER_ROLES = (os.Getenv("VAULT_CREATE_CLUSTER_ROLES") == "true")
+	result.VAULT_OIDC_CREATE_USER_ROLES = (os.Getenv("VAULT_OIDC_CREATE_USER_ROLES") == "true")
+	result.VAULT_OIDC_METHOD = os.Getenv("VAULT_OIDC_METHOD")
+	result.VAULT_OIDC_ALLOW_GROUPS = strings.Split(strings.ReplaceAll(os.Getenv("VAULT_OIDC_ALLOW_GROUPS"), " ", ""), ",")
+
 	result.VAULT_POLICIES = append(result.VAULT_POLICIES, os.Getenv("ARGOCD_APP_NAME"))
 	for _, e := range os.Environ() {
 		pair := strings.SplitN(e, "=", 2)
@@ -236,7 +242,45 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 				}
 			}
 		}
+	}
 
+	if env.VAULT_OIDC_CREATE_USER_ROLES {
+		policy := fmt.Sprintf(`
+		path "%s/data/%s/%s/*" {
+			capabilities = ["read", "list", "create", "update", "patch", "delete"]
+		}
+
+		path "%s/*" {
+		    capabilities = ["list"]
+		}
+		`,
+			env.VAULT_TENANT,
+			env.ENV,
+			env.APP,
+			env.VAULT_TENANT,
+		)
+
+		log.Info("Set vault oidc policies...")
+		err := vault.SetPolicy(
+			vaultEnv.VAULT_ADMIN_TOKEN,
+			fmt.Sprintf("%s-users", env.ARGOCD_APP_NAME),
+			policy,
+		)
+		if err != nil {
+			return err
+		}
+
+		log.Info("Create vault oidc user roles...")
+		err = vault.CreateOidcRole(
+			vaultEnv.VAULT_ADMIN_TOKEN,
+			env.ARGOCD_APP_NAME,
+			env.VAULT_OIDC_METHOD,
+			[]string{fmt.Sprintf("%s-users", env.ARGOCD_APP_NAME)},
+			env.VAULT_OIDC_ALLOW_GROUPS,
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -1,6 +1,8 @@
 package types
 
 type Env struct {
+	ENV                        string
+	APP                        string
 	CLUSTER                    string
 	ARGOCD_APP_NAME            string
 	ARGOCD_APP_NAMESPACE       string
@@ -24,6 +26,9 @@ type Env struct {
 	VAULT_CREATE_KUBERETES_ENGINES bool
 	VAULT_CREATE_APP_ROLES         bool
 	VAULT_CREATE_CLUSTER_ROLES     bool
+	VAULT_OIDC_CREATE_USER_ROLES   bool
+	VAULT_OIDC_METHOD              string
+	VAULT_OIDC_ALLOW_GROUPS        []string
 }
 
 type VaultEnv struct {

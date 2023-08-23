@@ -19,8 +19,11 @@ export VAULT_ALLOW_PATH_3="read, list;home/demo-app/*"
 export VAULT_ALLOW_PATH_TLS="read, list;tls/*"
 
 export VAULT_CREATE_KUBERETES_ENGINES="true"
-export VAULT_CREATE_APP_ROLES="true"
-export VAULT_CREATE_CLUSTER_ROLES="true"
+export VAULT_CREATE_APP_ROLES="false"
+export VAULT_CREATE_CLUSTER_ROLES="false"
+export VAULT_OIDC_CREATE_USER_ROLES="true"
+export VAULT_OIDC_METHOD=oidc
+export VAULT_OIDC_ALLOW_GROUPS="admins, users"
 
 export VAULT_ENV_SECRETS_0="infra/deploy/xfix/cd"
 
