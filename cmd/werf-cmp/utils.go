@@ -140,6 +140,13 @@ func GetVaultEnv(vault *vault.Vault, env types.Env) (types.VaultEnv, error) {
 
 func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error {
 	var policy string
+	var vaultCustomEnv string
+
+	if env.VAULT_ENV == "" {
+		vaultCustomEnv = env.ENV
+	} else {
+		vaultCustomEnv = env.VAULT_ENV
+	}
 
 	for _, path := range env.VAULT_ALLOW_PATHS {
 		parts := strings.Split(path, ";")
@@ -255,7 +262,7 @@ func SetVault(vault *vault.Vault, env types.Env, vaultEnv types.VaultEnv) error 
 		}
 		`,
 			env.VAULT_TENANT,
-			env.ENV,
+			vaultCustomEnv,
 			env.APP,
 			env.VAULT_TENANT,
 		)

@@ -16,6 +16,7 @@ type Env struct {
 	VAULT_AUTH_METHOD string // k-root
 	VAULT_AUTH_ROLE   string // xfix_argo-stack
 	VAULT_TENANT      string // xfix
+	VAULT_ENV         string
 
 	VAULT_POLICIES    []string // VAULT_POLICY_0="test_policy"
 	VAULT_ALLOW_PATHS []string // VAULT_ALLOW_PATH_0="read, list;home/demo-app/*"
