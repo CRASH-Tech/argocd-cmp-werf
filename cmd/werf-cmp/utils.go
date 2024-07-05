@@ -45,6 +45,7 @@ func GetEnv() (types.Env, error) {
 	result.VAULT_AUTH_METHOD = os.Getenv("VAULT_AUTH_METHOD")
 	result.VAULT_AUTH_ROLE = os.Getenv("VAULT_AUTH_ROLE")
 	result.VAULT_TENANT = os.Getenv("VAULT_TENANT")
+	result.VAULT_ENV = os.Getenv("VAULT_ENV")
 	result.VAULT_CREATE_KUBERETES_ENGINES = (os.Getenv("VAULT_CREATE_KUBERETES_ENGINES") == "true")
 	result.VAULT_CREATE_APP_ROLES = (os.Getenv("VAULT_CREATE_APP_ROLES") == "true")
 	result.VAULT_CREATE_CLUSTER_ROLES = (os.Getenv("VAULT_CREATE_CLUSTER_ROLES") == "true")
