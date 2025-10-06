@@ -1,1 +1,0 @@
-# argocd-cmp-werf
